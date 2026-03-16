@@ -1041,7 +1041,6 @@ export const updateSingleProductStatus = async (req, res, next) => {
     const { subOrderId, variantId, status } = req.body;
     const isAdmin = req.user.role === "ADMIN";
     const actorId = req.user._id;
-
     const variantObjectId = new mongoose.Types.ObjectId(variantId);
 
     const subOrderQuery = { _id: subOrderId, orderType: "SUB" };
@@ -1331,13 +1330,13 @@ export const updateOrderToDelivered = async (req, res, next) => {
         message: "Order is already delivered",
       });
     }
-
     order.status = "DELIVERED";
     order.deliveredDate = Date.now();
     const updatedOrder = await order.save();
-
     //Settlement funds will remain in the vendor's wallet for 7 days before a withdrawal request can be made.
-    await addSettlement(order.vendorId, order._id, order.totalAmount);
+    if (order.paymentStatus === "PAID") {
+      await addSettlement(order.vendorId, order._id, order.totalAmount);
+    }
 
     // Optional: Send notifications
     // await notifyVendor(order.vendorId, 'ORDER_DELIVERED', order._id);

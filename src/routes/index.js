@@ -23,6 +23,7 @@ import rfqRoutes from "./vendorShop/rfq.routes.js";
 const router = Router();
 
 router.use("/v1", authRoutes);
+router.use("/v1", vendorRoutes);
 router.use("/v1", marketPlaceRoutes);
 router.use("/v1", rentalRoutes);
 router.use("/v1", serviceProviderRoutes);
@@ -36,14 +37,12 @@ router.use("/v1", adminRoutes);
 router.use("/v1", notificationRoutes);
 router.use("/v1", userRoutes);
 
-
 // Vendor / Material shop routes
 router.use("/v1", countryRoutes);
 router.use("/v1", statRoutes);
 router.use("/v1", cityRoutes);
 router.use("/v1", pincodeRoutes);
 router.use("/v1", rfqRoutes);
-
 
 router.use("/v1/material", brandRoutes);
 router.use("/v1/material", productRoutes);

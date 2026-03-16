@@ -6,6 +6,7 @@ const orderSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+
     items: [
       {
         product: {
@@ -42,6 +43,7 @@ const orderSchema = new mongoose.Schema(
         thumbnail: String,
       },
     ],
+
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "vendorProfile",
@@ -91,10 +93,12 @@ const orderSchema = new mongoose.Schema(
       enum: ["UNPAID", "PAID", "FAILED", "REFUNDED"],
       default: "UNPAID",
     },
+
     paymentMethod: {
       type: String,
       enum: ["ONLINE", "COD", "WALLET"],
     },
+
     paymentFailedReason: {
       type: String,
       trim: true,
@@ -108,7 +112,6 @@ const orderSchema = new mongoose.Schema(
     labelUrl: String,
     invoice: String,
     creditNote: String,
-
     reason: String,
     remark: String,
     cancleBy: {
@@ -119,6 +122,41 @@ const orderSchema = new mongoose.Schema(
       type: String,
     },
     deliveredDate: Date,
+
+    //asgr
+    awbCode: {
+      type: String,
+    },
+    courierName: {
+      type: String,
+    },
+    shipmentId: {
+      type: String,
+    },
+
+    estimatedDeliveryDate: {
+      type: Date,
+    },
+
+    estimatedDeliveryTime: {
+      type: String,
+    },
+
+    pickupScheduledDate: {
+      type: Date,
+    },
+
+    logisticsStatus: {
+      type: String,
+      enum: [
+        "SHIPMENT_CREATED",
+        "PICKUP_SCHEDULED",
+        "PICKED_UP",
+        "IN_TRANSIT",
+        "OUT_FOR_DELIVERY",
+        "DELIVERED",
+      ],
+    },
   },
   { timestamps: true },
 );
@@ -127,3 +165,9 @@ orderSchema.index({ vandorId: 1, orderType: 1 });
 orderSchema.index({ status: 1 });
 
 export default mongoose.model("orderModel", orderSchema);
+
+//logistic API's need
+// 1️⃣ Create Reverse Shipment
+// 2️⃣ Schedule Return Pickup
+// 3️⃣ Track Return Shipment
+// 4️⃣ Cancel Return Shipment (optional)

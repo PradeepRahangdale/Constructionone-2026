@@ -6,6 +6,7 @@ import ReturnRequest from "../../models/marketPlace/returnRequest.model.js";
 import Refund from "../../models/marketPlace/refund.model.js";
 import Wallet from "../../models/user/wallet.model.js";
 import Transaction from "../../models/user/transaction.model.js";
+import { cancelSettlement } from "../vendorShop/vendorWallet.controller.js";
 
 const VALID_RETURN_REASONS = [
   "DEFECTIVE_PRODUCT",
@@ -449,6 +450,9 @@ export const performQC = async (req, res, next) => {
     // ── QC PASS → trigger refund ──────────────────────────────────────────
     returnReq.status = "QC_PASSED";
     returnReq.qcNote = qcNote?.trim() || "";
+//asgr
+    //when refund delevery is completed then settelement will be cancelled.
+    await cancelSettlement(returnReq.vandorId, returnReq.orderId, session);
 
     const refundAmount = returnReq.refundAmount;
 

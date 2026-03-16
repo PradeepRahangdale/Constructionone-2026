@@ -1,6 +1,7 @@
 import vendorTransactionModel from "../../models/vendorShop/vendorTransaction.model.js";
 import vendorWalletModel from "../../models/vendorShop/vendorWallet.model.js";
 import vendorWithdrawalBalanceModel from "../../models/vendorShop/vendorWithdrawalBalance.model.js";
+import mongoose from "mongoose";
 
 export const requestWithdraw = async (req, res) => {
   const vendorId = req.user.id;
@@ -26,68 +27,68 @@ export const requestWithdraw = async (req, res) => {
     data: request,
   });
 };
-export const approveWithdraw = async (req, res) => {
-  const { withdrawalId } = req.params;
+// export const approveWithdraw = async (req, res) => {
+//   const { withdrawalId } = req.params;
 
-  const withdrawal = await vendorWithdrawalBalanceModel.findById(withdrawalId);
-  const wallet = await vendorWalletModel.findOne({
-    vendorId: withdrawal.vendorId,
-  });
+//   const withdrawal = await vendorWithdrawalBalanceModel.findById(withdrawalId);
+//   const wallet = await vendorWalletModel.findOne({
+//     vendorId: withdrawal.vendorId,
+//   });
 
-  wallet.availableBalance -= withdrawal.amount;
-  wallet.totalBalance -= withdrawal.amount;
+//   wallet.availableBalance -= withdrawal.amount;
+//   wallet.totalBalance -= withdrawal.amount;
 
-  await wallet.save();
+//   await wallet.save();
 
-  withdrawal.status = "APPROVED";
-  await withdrawal.save();
+//   withdrawal.status = "APPROVED";
+//   await withdrawal.save();
 
-  await vendorTransactionModel.create({
-    vendorId: withdrawal.vendorId,
-    type: "WITHDRAWAL",
-    amount: withdrawal.amount,
-    status: "COMPLETED",
-    description: "Withdrawal to bank",
-  });
+//   await vendorTransactionModel.create({
+//     vendorId: withdrawal.vendorId,
+//     type: "WITHDRAWAL",
+//     amount: withdrawal.amount,
+//     status: "COMPLETED",
+//     description: "Withdrawal to bank",
+//   });
 
-  res.json({
-    success: true,
-    message: "Withdrawal approved",
-  });
-};
-export const rejectWithdraw = async (req, res) => {
-  const { withdrawalId } = req.params;
+//   res.json({
+//     success: true,
+//     message: "Withdrawal approved",
+//   });
+// };
 
-  const withdrawal = await vendorWithdrawalBalanceModel.findById(withdrawalId);
+// export const rejectWithdraw = async (req, res) => {
+//   const { withdrawalId } = req.params;
 
-  if (!withdrawal) {
-    return res.status(404).json({ message: "Request not found" });
-  }
+//   const withdrawal = await vendorWithdrawalBalanceModel.findById(withdrawalId);
 
-  const wallet = await vendorWalletModel.findOne({
-    vendorId: withdrawal.vendorId,
-  });
+//   if (!withdrawal) {
+//     return res.status(404).json({ message: "Request not found" });
+//   }
 
-  wallet.pendingWithdrawal -= withdrawal.amount;
+//   const wallet = await vendorWalletModel.findOne({
+//     vendorId: withdrawal.vendorId,
+//   });
 
-  await wallet.save();
+//   wallet.pendingWithdrawal -= withdrawal.amount;
 
-  withdrawal.status = "REJECTED";
-  withdrawal.adminNote = "Bank details invalid";
+//   await wallet.save();
 
-  await withdrawal.save();
+//   withdrawal.status = "REJECTED";
+//   withdrawal.adminNote = "Bank details invalid";
 
-  res.json({
-    success: true,
-    message: "Withdrawal rejected",
-  });
-};
+//   await withdrawal.save();
+
+//   res.json({
+//     success: true,
+//     message: "Withdrawal rejected",
+//   });
+// };
+
 export const getAllWithdrawalRequests = async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;
-
     const query = {};
-
     if (status) {
       query.status = status;
     }
@@ -115,5 +116,103 @@ export const getAllWithdrawalRequests = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+export const approveWithdraw = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const { withdrawalId } = req.params;
+
+    const withdrawal = await vendorWithdrawalBalanceModel
+      .findById(withdrawalId)
+      .session(session);
+
+    const wallet = await vendorWalletModel
+      .findOne({ vendorId: withdrawal.vendorId })
+      .session(session);
+
+    wallet.availableBalance -= withdrawal.amount;
+    wallet.totalBalance -= withdrawal.amount;
+    await wallet.save({ session });
+
+    withdrawal.status = "APPROVED";
+    await withdrawal.save({ session });
+
+    await vendorTransactionModel.create(
+      [
+        {
+          vendorId: withdrawal.vendorId,
+          type: "WITHDRAWAL",
+          amount: withdrawal.amount,
+          status: "COMPLETED",
+          description: "Withdrawal to bank",
+        },
+      ],
+      { session },
+    );
+
+    await session.commitTransaction();
+
+    res.json({
+      success: true,
+      message: "Withdrawal approved",
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  } finally {
+    session.endSession();
+  }
+};
+
+export const rejectWithdraw = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const { withdrawalId } = req.params;
+
+    const withdrawal = await vendorWithdrawalBalanceModel
+      .findById(withdrawalId)
+      .session(session);
+
+    if (!withdrawal) {
+      await session.abortTransaction();
+      return res.status(404).json({ message: "Request not found" });
+    }
+
+    const wallet = await vendorWalletModel
+      .findOne({ vendorId: withdrawal.vendorId })
+      .session(session);
+
+    wallet.pendingWithdrawal -= withdrawal.amount; // Note: Your code subtracts from pendingWithdrawal
+    await wallet.save({ session });
+
+    withdrawal.status = "REJECTED";
+    withdrawal.adminNote = "Bank details invalid";
+    await withdrawal.save({ session });
+
+    await session.commitTransaction();
+
+    res.json({
+      success: true,
+      message: "Withdrawal rejected",
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  } finally {
+    session.endSession();
   }
 };

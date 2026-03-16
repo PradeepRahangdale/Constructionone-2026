@@ -154,7 +154,7 @@ export const verifyOtp = async (req, res) => {
     return res.status(500).json({ success: false, error: e.message });
   }
 };
-
+//vendor select a business types according to module.
 export const businessSetup = async (req, res, next) => {
   try {
     const id = req.user.id;

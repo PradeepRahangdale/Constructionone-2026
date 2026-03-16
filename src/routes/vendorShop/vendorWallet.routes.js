@@ -3,9 +3,17 @@ import { vendorMiddleware } from "../../middlewares/auth.js";
 import {
   getWallet,
   getAllTransactionHistory,
+  getVendorEarningAnalytics,
+  getTransactionDetails,
 } from "../../controllers/vendorShop/vendorWallet.controller.js";
 const router = Router();
 
 router.get("/wallet", vendorMiddleware, getWallet);
+router.get("/earning-analytics", vendorMiddleware, getVendorEarningAnalytics);
 router.get("/transaction-history", vendorMiddleware, getAllTransactionHistory);
+router.get(
+  "/transaction-history/:transactionId",
+  vendorMiddleware,
+  getTransactionDetails,
+);
 export default router;

@@ -15,8 +15,8 @@ const vendorTransactionSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["PENDING", "SUCCESS", "FAILED"],
-      default: "SUCCESS",
+      enum: ["PENDING", "SUCCESS", "FAILED", "HOLD","CANCELLED"],
+      default: "PENDING",
     },
 
     orderId: String,

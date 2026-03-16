@@ -9,6 +9,14 @@ const settlementWorker = new Worker(
   async (job) => {
     const { vendorId, amount, transactionId } = job.data;
 
+    const transaction = await Transaction.findById(transactionId);
+
+    // Safety check
+    if (!transaction || transaction.status !== "HOLD") {
+      console.log("Settlement skipped:", transactionId);
+      return;
+    }
+
     const wallet = await Wallet.findOne({ vendorId });
     if (!wallet) return;
 
@@ -16,10 +24,8 @@ const settlementWorker = new Worker(
     wallet.onHoldBalance -= amount;
 
     await wallet.save();
-
-    await Transaction.findByIdAndUpdate(transactionId, {
-      status: "AVAILABLE",
-    });
+    transaction.status = "AVAILABLE";
+    await transaction.save();
 
     console.log("Settlement done:", vendorId);
   },

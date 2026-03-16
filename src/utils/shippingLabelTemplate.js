@@ -3,42 +3,47 @@ import { VendorCompany } from "../models/vendorShop/vendor.model.js";
 import Product from "../models/vendorShop/product.model.js";
 
 const s = (val) => {
-  if (val === null || val === undefined) return 'N/A';
-  if (typeof val === 'object') return val.toString ? val.toString() : JSON.stringify(val);
+  if (val === null || val === undefined) return "N/A";
+  if (typeof val === "object")
+    return val.toString ? val.toString() : JSON.stringify(val);
   return String(val);
 };
 
 export const generateShippingLabelHTML = async (data) => {
+  const userId = data.order.userId;
+  const vendorId = data.order.vendorId;
 
-    const userId = data.order.userId;
-    const vendorId = data.order.vendorId;
+  const [user, vendor, itemsWithProducts] = await Promise.all([
+    userModel.findById(userId),
+    VendorCompany.findById(vendorId),
+    Promise.all(
+      data.order.items.map(async (item) => {
+        const product = await Product.findById(item.product);
+        return {
+          ...item,
+          productName: product.name || "N/A",
+          sku: product.sku || "N/A",
+          price: item.price || 0,
+          quantity: item.quantity || 1,
+        };
+      }),
+    ),
+  ]);
 
-    const [user, vendor, itemsWithProducts] = await Promise.all([
-        userModel.findById(userId),
-        VendorCompany.findById(vendorId),
-        Promise.all(data.order.items.map(async (item) => {
-            const product = await Product.findById(item.product);
-            return {
-                ...item,
-                productName: product.name||'N/A',
-                sku: product.sku ||'N/A',
-                price: item.price || 0,
-                quantity: item.quantity || 1,
-            };
-        }))
-    ]);
+  const vendorAddress = vendor?.businessAddress;
+  const shippingAddr = data.order.shippingAddress;
+  const shipTo =
+    typeof shippingAddr === "object"
+      ? `${shippingAddr.address ?? ""}, ${shippingAddr.city ?? ""}, ${shippingAddr.state ?? ""}, ${shippingAddr.pincode ?? ""}, ${shippingAddr.country ?? ""}`
+      : (shippingAddr ?? "N/A");
 
-    const vendorAddress = vendor?.businessAddress;
-    const shippingAddr = data.order.shippingAddress;
-    const shipTo = typeof shippingAddr === 'object'
-        ? `${shippingAddr.address ?? ''}, ${shippingAddr.city ?? ''}, ${shippingAddr.state ?? ''}, ${shippingAddr.pincode ?? ''}, ${shippingAddr.country ?? ''}`
-        : shippingAddr ?? 'N/A';
+  const orderDate = new Date(data.order.createdAt).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 
-    const orderDate = new Date(data.order.createdAt).toLocaleDateString('en-IN', {
-        day: '2-digit', month: '2-digit', year: 'numeric'
-    });
-
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8"/>
@@ -294,7 +299,9 @@ export const generateShippingLabelHTML = async (data) => {
         <th style="width:12%">Price</th>
         <th style="width:16%">Total</th>
       </tr>
-     ${itemsWithProducts.map((item) => `
+     ${itemsWithProducts
+       .map(
+         (item) => `
     <tr>
       <td>${s(item.productName)}</td>
       <td>${s(item.sku)}</td>
@@ -302,7 +309,9 @@ export const generateShippingLabelHTML = async (data) => {
       <td>&#8377;${s(item.price)}</td>
       <td>&#8377;${((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)}</td>
     </tr>
-  `).join('')}
+  `,
+       )
+       .join("")}
     </table>
   </div>
 
