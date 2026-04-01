@@ -201,6 +201,14 @@ const productSchema = new mongoose.Schema(
       type: Number,
       min: 0,
     },
+    isFeatured: {
+      type: Boolean,
+      default: false,
+    },
+    isFlashSale: {
+      type: Boolean,
+      default: false,
+    },
 
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
