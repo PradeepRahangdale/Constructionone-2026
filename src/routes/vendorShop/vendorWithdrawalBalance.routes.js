@@ -5,11 +5,13 @@ import {
   approveWithdraw,
   rejectWithdraw,
   getAllWithdrawalRequests,
+  downloadStatementPDF,
 } from "../../controllers/vendorShop/vendorWithdrawalBalance.controller.js";
 const router = Router();
 
 //vendor
 router.post("/withdrawals", vendorMiddleware, requestWithdraw);
+router.get("/statement/pdf", vendorMiddleware, downloadStatementPDF);
 
 //admin - API'S
 router.get("/withdrawals", adminMiddleware, getAllWithdrawalRequests);

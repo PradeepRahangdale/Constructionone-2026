@@ -83,7 +83,6 @@ export const authMiddleware = async (req, res, next) => {
     return res.status(401).json({ message: "Invalid or expired token" });
   }
 };
-
 export const vendorMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -111,7 +110,6 @@ export const vendorMiddleware = async (req, res, next) => {
     return res.status(401).json({ message: "Invalid or expired token" });
   }
 };
-
 export const adminMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 

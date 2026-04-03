@@ -2,6 +2,7 @@ import vendorTransactionModel from "../../models/vendorShop/vendorTransaction.mo
 import vendorWalletModel from "../../models/vendorShop/vendorWallet.model.js";
 import vendorWithdrawalBalanceModel from "../../models/vendorShop/vendorWithdrawalBalance.model.js";
 import mongoose from "mongoose";
+import PDFDocument from "pdfkit";
 
 export const requestWithdraw = async (req, res) => {
   const vendorId = req.user.id;
@@ -27,6 +28,7 @@ export const requestWithdraw = async (req, res) => {
     data: request,
   });
 };
+
 // export const approveWithdraw = async (req, res) => {
 //   const { withdrawalId } = req.params;
 
@@ -216,3 +218,76 @@ export const rejectWithdraw = async (req, res) => {
     session.endSession();
   }
 };
+
+export const downloadStatementPDF = async (req, res) => {
+  try {
+    const vendorId = req.user.id;
+    const { from, to, status } = req.query;
+
+    let filter = { vendorId };
+
+    if (from && to) {
+      filter.createdAt = {
+        $gte: new Date(from),
+        $lte: new Date(to),
+      };
+    }
+
+    if (status) {
+      filter.status = status;
+    }
+
+    const withdrawals = await vendorWithdrawalBalanceModel
+      .find(filter)
+      .populate("bankAccountId")
+      .sort({ createdAt: -1 });
+
+    const doc = new PDFDocument({ margin: 30 });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", "attachment; filename=statement.pdf");
+
+    doc.pipe(res);
+
+    doc.fontSize(18).text("Vendor Withdrawal Statement", {
+      align: "center",
+    });
+
+    doc.moveDown();
+
+    doc.fontSize(10).text(`From: ${from || "All"}  To: ${to || "All"}`);
+
+    doc.moveDown();
+
+    doc
+      .fontSize(12)
+      .text("Date       | Amount | Status     | Bank       | Account");
+
+    doc.moveDown();
+
+    withdrawals.forEach((item) => {
+      const row = `
+${item.createdAt.toISOString().split("T")[0]} | 
+${item.amount} | 
+${item.status} | 
+${item.bankAccountId?.bankName || "-"} | 
+${item.bankAccountId?.accountNumber || "-"}`;
+
+      doc.fontSize(10).text(row);
+      doc.moveDown();
+    });
+
+    const total = withdrawals.reduce((sum, i) => sum + i.amount, 0);
+    doc.moveDown();
+    doc.fontSize(12).text(`Total Withdrawn: ₹${total}`);
+    doc.end();
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// const downloadPDF = async () => {
+//   const res = await axios.get(
+//     "/api/vendor/bank/statement/pdf?from=2026-01-01&to=2026-03-01",
+//     { responseType: "blob" }
+//   );

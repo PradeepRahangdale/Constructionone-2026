@@ -35,6 +35,10 @@ const vendorProfile = new mongoose.Schema(
       attempts: { type: Number, default: 0 },
       lastSentAt: Date,
     },
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
     isAadharVerified: {
       type: Boolean,
       default: false,
@@ -138,7 +142,6 @@ const vendorCompany = new mongoose.Schema(
 
     gstNumber: { type: String },
     contactNumber: { type: String },
-
     accountHolderName: { type: String },
     bankName: { type: String },
     accountNumber: { type: String },
@@ -150,7 +153,6 @@ const vendorCompany = new mongoose.Schema(
       default: "Other",
     },
     upiId: { type: String },
-
     shopImages: [String],
     certificates: [String],
     cancelledCheque: { type: String },

@@ -699,8 +699,14 @@ class ProductController {
       delete productData.variants;
 
       //  safer validation (UPDATED)
-      if (!variants || !Array.isArray(variants) || variants.length === 0) {
-        throw new APIError("At least one variant is required", 400);
+      // when vendor add a product to add a varient is required logic
+      // if (!variants || !Array.isArray(variants) || variants.length === 0) {
+      //   throw new APIError("At least one variant is required", 400);
+      // }
+
+      // when vendor add a product so no need to add varient logic
+      if (!variants || !Array.isArray(variants)) {
+        variants = [];
       }
 
       // HANDLE FILES
@@ -1245,5 +1251,42 @@ class ProductController {
     }
   }
 }
+//asgr
+export const addVariant = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { size, mrp, discount, stock, Type } = req.body;
+
+    const product = await Product.findById(productId);
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const price = mrp - (mrp * discount) / 100;
+
+    const variant = await Variant.create({
+      productId,
+      moduleId: product.moduleId,
+      pcategoryId: product.pcategoryId,
+      categoryId: product.categoryId,
+      subcategoryId: product.subcategoryId,
+      brandId: product.brandId,
+      size,
+      mrp,
+      discount,
+      price,
+      stock,
+      Type,
+    });
+
+    res.json({
+      success: true,
+      variant,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 export default ProductController;

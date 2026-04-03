@@ -11,14 +11,14 @@ const MAX_OTP_ATTEMPTS = 3;
 const COOLDOWN_PERIOD = 50 * 1000;
 import { APIError } from "../../middlewares/errorHandler.js";
 import RedisCache from "../../utils/redisCache.js";
-import { ApiResponse } from "../../utils/ApiResponse.js";
 import productModel from "../../models/vendorShop/product.model.js";
 import mongoose from "mongoose";
+import refreshTokenModel from "../../models/vendorShop/refreshToken.model.js";
 
 //vendor auth
 export const vendorAuth = async (req, res) => {
   try {
-    const { phoneNumber } = req.body;
+    const { moduleId, phoneNumber } = req.body;
     const phoneValidation = validatePhone(phoneNumber);
 
     if (!phoneValidation.valid) {
@@ -27,41 +27,56 @@ export const vendorAuth = async (req, res) => {
         error: phoneValidation.error,
       });
     }
-
     const validatedPhone = phoneValidation.normalized;
 
-    const existingUser = await VendorProfile.findOne({
+    // Check ANY user (verified or not)
+    let user = await VendorProfile.findOne({
       phoneNumber: validatedPhone,
     });
 
-    if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "Account already exists with this phone number. Please login to continue.",
-      });
-    }
-
     // const otp = generateOtp();
-    const otp = 1234; // For testing purposes, replace with generateOtp() in production
+    const otp = 1234; // testing
     const hashedOtp = await bcrypt.hash(otp.toString(), 10);
 
     const phoneOtpData = {
       codeHash: hashedOtp,
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 min
-      attempts: 1,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      attempts: 0,
       lastSentAt: new Date(),
     };
 
+    // CASE 1: User exists + verified → LOGIN
+    if (user && user.isPhoneVerified) {
+      return res.status(200).json({
+        success: true,
+        type: "LOGIN",
+        message: "User exists. Please verify OTP to login.",
+      });
+    }
+
+    // CASE 2: User exists but NOT verified → resend OTP
+    if (user && !user.isPhoneVerified) {
+      user.phoneOtp = phoneOtpData;
+      await user.save();
+
+      return res.status(200).json({
+        success: true,
+        type: "REGISTER",
+        message: "OTP resent. Please verify to complete registration.",
+      });
+    }
+
+    // CASE 3: New User → create
     await VendorProfile.create({
       phoneNumber: validatedPhone,
+      moduleId,
       phoneOtp: phoneOtpData,
     });
 
     return res.status(200).json({
       success: true,
       type: "REGISTER",
-      message: "OTP sent successfully. Please verify to complete registration.",
+      message: "OTP sent successfully. Please verify to register.",
     });
   } catch (err) {
     return res.status(500).json({
@@ -72,7 +87,7 @@ export const vendorAuth = async (req, res) => {
 };
 export const verifyOtp = async (req, res) => {
   try {
-    const { phoneNumber, otp } = req.body;
+    const { phoneNumber, otp, deviceId } = req.body;
 
     const user = await VendorProfile.findOne({ phoneNumber });
     if (!user) {
@@ -127,18 +142,46 @@ export const verifyOtp = async (req, res) => {
       });
     }
     user.phoneOtp = null;
+    user.isPhoneVerified = true;
     await user.save();
-    const jwtToken = jwt.sign(
+
+    // const jwtToken = jwt.sign(
+    //   { id: user._id, role: "vendor" },
+    //   process.env.JWT_SECRET,
+    //   { expiresIn: "365d" },
+    // );
+
+    const accessToken = jwt.sign(
       { id: user._id, role: "vendor" },
       process.env.JWT_SECRET,
-      { expiresIn: "365d" },
+      { expiresIn: "15m" },
     );
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },
+    );
+
+    // remove old token for same device
+    await refreshTokenModel.deleteMany({
+      vendorId: user._id,
+      deviceId,
+    });
+
+    await refreshTokenModel.create({
+      vendorId: user._id,
+      token: refreshToken,
+      deviceId,
+      expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
 
     const safeUser = {
       id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
       phoneNumber: user.phoneNumber,
+      isPhoneVerified: user.isPhoneVerified,
       isAdminVerified: user.isAdminVerified,
       isAadharVerified: user.isAadharVerified,
       isProfileCompleted: user.isProfileCompleted,
@@ -148,7 +191,9 @@ export const verifyOtp = async (req, res) => {
       success: true,
       message: "OTP verified successfully",
       user: safeUser,
-      token: jwtToken,
+      // token: jwtToken,
+      accessToken,
+      refreshToken,
     });
   } catch (e) {
     return res.status(500).json({ success: false, error: e.message });
@@ -728,7 +773,80 @@ export const upsertVendorCompanyInfo = async (req, res) => {
     });
   }
 };
+
+//bank details issues!
+// import VendorBankAccount from "../models/vendorBankAccount.model.js";
+// export const upsertVendorCompanyInfo = async (req, res) => {
+//   try {
+//     const { vendorId, bankDetails, ...companyData } = req.body;
+
+//     // 🟢 Handle files
+//     if (req.files) {
+//       if (req.files.shopImages) {
+//         companyData.shopImages = req.files.shopImages.map(
+//           (file) => file.location
+//         );
+//       }
+
+//       if (req.files.certificates) {
+//         companyData.certificates = req.files.certificates.map(
+//           (file) => file.location
+//         );
+//       }
+
+//       if (req.files.cancelledCheque) {
+//         companyData.cancelledCheque =
+//           req.files.cancelledCheque[0].location;
+//       }
+//     }
+
+//     // 🟢 Save Company
+//     const company = await VendorCompany.create({
+//       vendorId,
+//       ...companyData,
+//     });
+
+//     // 🔥 🟢 Save Bank (IMPORTANT)
+//     if (bankDetails) {
+//       const {
+//         accountHolderName,
+//         accountNumber,
+//         ifscCode,
+//         bankName,
+//       } = bankDetails;
+
+//       // check existing bank count
+//       const count = await VendorBankAccount.countDocuments({ vendorId });
+
+//       await VendorBankAccount.create({
+//         vendorId,
+//         accountHolderName,
+//         accountNumber,
+//         ifscCode,
+//         bankName,
+//         isDefault: count === 0, // first bank auto default
+//       });
+//     }
+
+//     // 🟢 Update Vendor Profile
+//     const vendor = await VendorProfile.findById(vendorId);
+//     vendor.isProfileCompleted = true;
+//     await vendor.save();
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Company & bank details saved successfully",
+//       data: company,
+//     });
+//   } catch (e) {
+//     return res.status(500).json({
+//       success: false,
+//       error: e.message,
+//     });
+//   }
+// };
 //update Shop details
+
 export const updateUpsertVendorCompanyInfo = async (req, res) => {
   try {
     const vendorId = req.user.id;
@@ -1077,7 +1195,6 @@ export const disableVendorStatus = async (req, res, next) => {
     next(error);
   }
 };
-
 //vendorshop - catogry
 export const getCategoriesByVendorId = async (req, res) => {
   const vendorId = req.params.vendorId;
@@ -1110,6 +1227,74 @@ export const getCategoriesByVendorId = async (req, res) => {
       image: category.image,
     })),
   });
+};
+
+export const refreshTokenHandler = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        message: "No refresh token",
+      });
+    }
+
+    // verify refresh token
+    let decoded;
+    try {
+      decoded = jwt.verify(
+        refreshToken,
+        process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
+      );
+    } catch {
+      return res.status(401).json({
+        message: "Invalid refresh token",
+      });
+    }
+
+    // DB check
+    const stored = await refreshTokenModel.findOne({
+      token: refreshToken,
+    });
+
+    if (!stored || stored.isRevoked) {
+      return res.status(401).json({
+        message: "Token revoked",
+      });
+    }
+
+    //  rotation (recommended)
+    stored.isRevoked = true;
+    await stored.save();
+
+    const newRefreshToken = jwt.sign(
+      { id: decoded.id },
+      process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
+      { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },
+    );
+
+    await refreshTokenModel.create({
+      vendorId: decoded.id,
+      token: newRefreshToken,
+      deviceId: stored.deviceId,
+      expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    const newAccessToken = jwt.sign(
+      { id: decoded.id, role: "vendor" },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" },
+    );
+
+    return res.json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (err) {
+    return res.status(401).json({
+      message: "Unauthorized",
+    });
+  }
 };
 
 //dynamic-otp

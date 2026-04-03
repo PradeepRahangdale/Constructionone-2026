@@ -325,7 +325,6 @@ export const changePassword = catchAsync(async (req, res, next) => {
     .status(200)
     .json(new ApiResponse(200, null, "Password updated successfully"));
 });
-
 // Logout
 export const logout = catchAsync(async (req, res) => {
   if (req.user) {

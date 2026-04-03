@@ -22,6 +22,7 @@ import {
   updateUpsertVendorCompanyInfo,
   saveFcmToken,
   getCategoriesByVendorId,
+  refreshTokenHandler,
 } from "../../controllers/vendorShop/vendor.controller.js";
 import {
   adminMiddleware,
@@ -41,7 +42,7 @@ router.post("/auth", vendorAuth);
 router.post("/resend-otp", resendOtp);
 router.post("/verify-otp", verifyOtp);
 
-router.post("/business-type", vendorMiddleware, businessSetup); 
+router.post("/business-type", vendorMiddleware, businessSetup);
 router.post("/login/phone", loginWithPhone);
 
 //aadhar varify
@@ -106,6 +107,7 @@ router.post(
   removeMultipleBadgesByAdmin,
 );
 router.post("/saveFcmToken", vendorMiddleware, saveFcmToken);
+router.post("/refresh-token", refreshTokenHandler);
 router.get("/vendorshop/:vendorId", getCategoriesByVendorId);
 
 export default router;

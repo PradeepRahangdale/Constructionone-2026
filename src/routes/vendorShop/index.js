@@ -5,12 +5,14 @@ import shoptiming from "./shoptiming.routes.js";
 import vendorReview from "./vendorReview.routes.js";
 import vendorWallet from "./vendorWallet.routes.js";
 import vendorWithdrawal from "./vendorWithdrawalBalance.routes.js";
+import vendorBankAccount from "./vendorBankAccount.routes.js";
 
 router.use("/vendor", vendorReview);
 router.use("/vendor", shoptiming);
 router.use("/vendor", vendorWallet);
 router.use("/vendor", vendorWithdrawal);
 router.use("/vendor", vendorAuth);
+router.use("/vendor", vendorBankAccount);
 
 export default router;
 //asgr

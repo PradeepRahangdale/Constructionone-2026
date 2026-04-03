@@ -166,7 +166,6 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-
     varified: {
       type: Boolean,
       default: false,
@@ -279,7 +278,6 @@ productSchema.index(
   },
   { name: "idx_marketplace_core" },
 );
-
 // PARTIAL INDEX
 productSchema.index(
   {
@@ -295,7 +293,6 @@ productSchema.index(
     name: "idx_active_products",
   },
 );
-
 // optional future filter
 productSchema.index({ "properties.key": 1 });
 

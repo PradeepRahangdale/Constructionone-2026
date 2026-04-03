@@ -9,7 +9,7 @@
 import Banner from '../models/banner/banner.model.js';
 import Pcategory from '../models/category/pcategory.model.js';
 import Product from '../models/vendorShop/product.model.js';
-import { VendorProfile } from '../models/vendorShop/vendor.model.js';  // named export
+import { VendorProfile ,VendorCompany} from '../models/vendorShop/vendor.model.js';  // named export
 import Brand from '../models/vendorShop/brand.model.js';
 import FlashSale from '../models/flashSale/flashSale.model.js';
 import FlashSaleItem from '../models/flashSale/flashSaleItem.model.js';

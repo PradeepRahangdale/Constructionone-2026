@@ -17,7 +17,11 @@ const vendorWithdrawalBalanceSchema = new mongoose.Schema(
       default: "PENDING",
     },
 
-    bankAccountId: String,
+    bankAccountId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "VendorBankAccount",
+      // required: true,
+    },
   },
   { timestamps: true },
 );
