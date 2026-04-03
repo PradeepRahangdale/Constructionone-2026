@@ -18,6 +18,9 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { generateOtp, sendOtpViaMSG91 } from "../../utils/otpUtils.js";
+import { createReferral } from "../../services/referral.service.js";
+import { sendEmailOtp } from "../../utils/emailUtils.js";
+
 
 // Register User
 export const register = catchAsync(async (req, res, next) => {
@@ -25,13 +28,29 @@ export const register = catchAsync(async (req, res, next) => {
   if (error) return next(new APIError(400, error.details[0].message));
 
   const { email, phone } = req.body;
+  const { referralCode } = req.query; // optional: ?referralCode=ABCD1234
 
   const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
   if (existingUser) {
     return next(new APIError(400, "Email or Phone already exists"));
   }
 
-  const newUser = await User.create(req.body);
+  // Check if referralCode is valid
+  let referrer = null;
+  if (referralCode) {
+    referrer = await User.findOne({ referralCode }).select("_id").lean();
+    // Invalid code — ignore silently (don't block registration)
+  }
+
+  const userData = { ...req.body };
+  if (referrer) userData.referredBy = referrer._id;
+
+  const newUser = await User.create(userData);
+
+  // Fire-and-forget: create PENDING referral record
+  if (referrer) {
+    createReferral(referrer._id, newUser._id).catch(() => { });
+  }
 
   const accessToken = newUser.generateAccessToken();
   const refreshToken = newUser.generateRefreshToken();
@@ -51,12 +70,14 @@ export const register = catchAsync(async (req, res, next) => {
           lastName: newUser.lastName,
           email: newUser.email,
           role: newUser.role,
+          referralCode: newUser.referralCode,
         },
       },
       "User registered successfully",
     ),
   );
 });
+
 
 // Login with Email/Password
 export const login = catchAsync(async (req, res, next) => {
@@ -206,22 +227,20 @@ export const forgotPassword = catchAsync(async (req, res, next) => {
   const user = await User.findOne({ email });
   if (!user) return next(new APIError(404, "User not found"));
 
-  // ─── DEV MODE: static OTP ────────────────────────────────────────────────────
-  // TODO (PRODUCTION): Uncomment the real block below and delete the static otp line.
-  //
-  // const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  // user.otp = otp;
-  // user.otpExpiry = Date.now() + 5 * 60 * 1000;
-  // await user.save({ validateBeforeSave: false });
-  // // TODO: integrate email OTP service here (e.g. Nodemailer / SendGrid)
-  // ─────────────────────────────────────────────────────────────────────────────
-  const otp = "1234"; // DEV ONLY — static OTP. Replace with Math.random() in production.
+  const otp = Math.floor(1000 + Math.random() * 9000).toString();
   user.otp = otp;
   user.otpExpiry = Date.now() + 5 * 60 * 1000; // 5 mins
   await user.save({ validateBeforeSave: false });
-  console.log(`[DEV MODE] Static Forgot Password OTP for ${email}: ${otp}`);
 
-  res.status(200).json(new ApiResponse(200, { otp }, "OTP sent to email"));
+  try {
+    await sendEmailOtp(user.email, otp);
+    res.status(200).json(new ApiResponse(200, null, "OTP sent successfully to your registered email"));
+  } catch (error) {
+    user.otp = undefined;
+    user.otpExpiry = undefined;
+    await user.save({ validateBeforeSave: false });
+    return next(new APIError(500, "Failed to send OTP email. Please try again later."));
+  }
 });
 
 // Verify Reset OTP & Get Token
