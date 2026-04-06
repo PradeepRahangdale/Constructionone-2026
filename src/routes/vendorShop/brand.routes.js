@@ -13,6 +13,7 @@ const router = Router();
 // Base: /api/v1/material
 
 router.get("/brands", requireAuth, BrandController.getBrands);
+//demo
 router.get("/brands/:id", requireAuth, BrandController.getBrand);
 
 router.post(

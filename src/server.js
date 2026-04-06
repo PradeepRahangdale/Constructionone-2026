@@ -13,6 +13,7 @@ dotenv.config();
 import logger from "./utils/logger.js";
 import "./workers/shipping.worker.js";
 import "./workers/settlement.worker.js";
+import "./workers/notification.worker.js";
 const app = express();
 // Security Middleware
 app.use(helmet());

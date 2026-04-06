@@ -23,4 +23,4 @@ export const shippingQueue = new Queue("shipping-queue", {
   },
 });
 
-console.log("BullMQ Shipping Queue initialized");
+// console.log("BullMQ Shipping Queue initialized");

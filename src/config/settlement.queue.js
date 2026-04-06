@@ -14,4 +14,4 @@ export const settlementQueue = new Queue("wallet-settlement-queue", {
   },
 });
 
-console.log("Wallet Settlement Queue initialized");
+// console.log("Wallet Settlement Queue initialized");

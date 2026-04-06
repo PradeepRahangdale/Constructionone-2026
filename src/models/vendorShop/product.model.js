@@ -211,7 +211,7 @@ const productSchema = new mongoose.Schema(
 
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "VendorProfile",
+      ref: "vendorProfile",
     },
 
     vendorLocation: {

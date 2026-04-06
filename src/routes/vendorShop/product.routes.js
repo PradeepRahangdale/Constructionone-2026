@@ -16,6 +16,12 @@ const router = Router();
 // GET all products — any authenticated user/admin/vendor
 router.get("/products", authMiddleware, ProductController.getProducts);
 
+//getProductBySubCategory vendor products
+router.get(
+  "/product/subcategory/:subcategoryId",
+  authMiddleware,
+  ProductController.getProductBySubCategory)
+
 // GET top selling products (must be BEFORE /product/:id to avoid wildcard conflict)
 router.get(
   "/products/top-selling",
@@ -61,7 +67,7 @@ router.patch(
   ProductController.disableProduct,
 );
 
-// VERIFY product (vendor only)
+// VERIFY product (vendor only) admin
 router.patch(
   "/verifyProduct/:id",
   adminMiddleware,

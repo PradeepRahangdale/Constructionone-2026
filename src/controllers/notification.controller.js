@@ -198,7 +198,6 @@ export const markNotificationRead = async (req, res, next) => {
     next(err);
   }
 };
-
 //get for notification
 export const getUserNotifications = async (req, res) => {
   try {
@@ -286,7 +285,6 @@ export const sendOrderNotificationToUser = async (order, status) => {
   }
 };
 // Internal helper — Send new order notification to a vendor
-
 export const sendOrderNotificationToVendor = async (subOrder) => {
   try {
     const vendorId = subOrder.vandorId;

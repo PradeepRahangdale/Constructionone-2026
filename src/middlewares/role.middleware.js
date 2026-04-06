@@ -13,7 +13,6 @@ export const requireRole = (...roles) => {
     next();
   };
 };
-
 export const requirePermission = (permission) => {
   return (req, res, next) => {
     // Admin has all permissions

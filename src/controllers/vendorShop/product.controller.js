@@ -4,7 +4,10 @@ import Variant from "../../models/vendorShop/variant.model.js";
 import { APIError } from "../../middlewares/errorHandler.js";
 import RedisCache from "../../utils/redisCache.js";
 import { calculateDiscount } from "../../utils/priceCalculator.js";
-import { VendorCompany } from "../../models/vendorShop/vendor.model.js";
+import {
+  VendorCompany,
+  VendorProfile,
+} from "../../models/vendorShop/vendor.model.js";
 
 class ProductController {
   //testing -asgr
@@ -1041,6 +1044,7 @@ class ProductController {
   }
 
   // trending Product
+
   //asgar ---> flash sale
   static async setFlashSale(req, res) {
     try {
@@ -1248,6 +1252,148 @@ class ProductController {
       return res.status(200).json(response);
     } catch (error) {
       next(error);
+    }
+  }
+
+  static async getProductBySubCategory(req, res) {
+    // try {
+    //   const { subcategoryId } = req.params;
+    //   const { page = 1, limit = 10, type } = req.query;
+
+    //   const skip = (page - 1) * limit;
+
+    //   // 🔥 STEP 1: base filter
+    //   const filter = {
+    //     subcategoryId,
+    //   };
+
+    //   //  STEP 2: TYPE FILTER (IMPORTANT)
+    //   if (type) {
+    //     const variantIds = await Variant.find({ Type: type }).select("_id");
+
+    //     filter.defaultVariantId = {
+    //       $in: variantIds.map((v) => v._id),
+    //     };
+    //   }
+
+    //   const products = await Product.find(filter)
+    //     .select(
+    //       "name images avgRating reviewCount slug properties minDiscount maxDiscount vendorId defaultVariantId",
+    //     )
+    //     .populate({
+    //       path: "vendorId",
+    //       select: "firstName lastName",
+    //     })
+    //     .populate({
+    //       path: "defaultVariantId", // 👈 MAIN FIX
+    //       select: "price discount Type",
+    //     })
+    //     .skip(skip)
+    //     .limit(Number(limit));
+
+    //   // 🔥 STEP 4: CLEAN RESPONSE
+    //   const formattedProducts = products.map((p) => ({
+    //     name: p.name,
+    //     images: p.images,
+    //     avgRating: p.avgRating,
+    //     reviewCount: p.reviewCount,
+    //     slug: p.slug,
+    //     properties: p.properties,
+    //     minDiscount: p.minDiscount,
+    //     maxDiscount: p.maxDiscount,
+
+    //     vendor: {
+    //       firstName: p.vendorId?.firstName,
+    //       lastName: p.vendorId?.lastName,
+    //     },
+
+    //     price: p.defaultVariantId?.price ?? null,
+    //     discount: p.defaultVariantId?.discount ?? null,
+    //     type: p.defaultVariantId?.Type ?? null,
+    //   }));
+
+    //   const total = await Product.countDocuments(filter);
+
+    //   res.json({
+    //     success: true,
+    //     page: Number(page),
+    //     totalPages: Math.ceil(total / limit),
+    //     totalProducts: total,
+    //     products: formattedProducts,
+    //   });
+    // } catch (error) {
+    //   console.error(error);
+    //   res.status(500).json({ message: error.message });
+    // }
+
+    try {
+      const { subcategoryId } = req.params;
+      const { page = 1, limit = 10, type } = req.query;
+
+      const skip = (page - 1) * limit;
+
+      const filter = {
+        subcategoryId,
+      };
+
+      if (type) {
+        const variantIds = await Variant.find({
+          Type: { $regex: new RegExp(`^${type}$`, "i") }, // case insensitive
+        }).select("_id");
+
+        filter.defaultVariantId = {
+          $in: variantIds.map((v) => v._id),
+        };
+      }
+
+      const products = await Product.find(filter)
+        .select(
+          "name images avgRating reviewCount slug properties minDiscount maxDiscount vendorId defaultVariantId",
+        )
+        .populate({
+          path: "vendorId",
+          select: "firstName lastName",
+        })
+        .populate({
+          path: "defaultVariantId",
+          select: "price discount Type",
+        })
+        .skip(skip)
+        .limit(Number(limit));
+
+      const formattedProducts = products.map((p) => ({
+        id: p._id,
+        name: p.name,
+        images: p.images,
+        avgRating: p.avgRating,
+        reviewCount: p.reviewCount,
+        slug: p.slug,
+        properties: p.properties,
+        minDiscount: p.minDiscount,
+        maxDiscount: p.maxDiscount,
+
+        vendor: {
+          firstName: p.vendorId?.firstName,
+          lastName: p.vendorId?.lastName,
+        },
+
+        price: p.defaultVariantId?.price ?? null,
+        discount: p.defaultVariantId?.discount ?? null,
+        type: p.defaultVariantId?.Type ?? null,
+      }));
+
+      const total = await Product.countDocuments(filter);
+
+      res.json({
+        success: true,
+        page: Number(page),
+        totalPages: Math.ceil(total / limit),
+        totalProducts: total,
+        products: formattedProducts,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: error.message });
     }
   }
 }
