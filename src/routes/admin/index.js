@@ -16,6 +16,8 @@ import taxRoutes from "./tax.routes.js";
 import adminOrderRoutes from "./order.routes.js";
 import globalSearchRoutes from "./globalSearch.routes.js";
 import adminReviewRoutes from "./review.routes.js";
+import trendingRoutes from "./trending.routes.js";
+
 const router = Router();
 
 // Public admin route (login) — managed internally in admin.routes.js
@@ -34,6 +36,7 @@ router.use("/admin/faqs", faqRoutes);
 router.use("/admin/banners", bannerRoutes);
 router.use("/admin/home-sections", homeSectionRoutes);
 router.use("/admin/flash-sales", flashSaleRoutes);
+router.use("/admin/trending-sections", trendingRoutes);
 router.use("/tax", taxRoutes);
 router.use("/admin/order", adminOrderRoutes);
 router.use("/user", globalSearchRoutes);
