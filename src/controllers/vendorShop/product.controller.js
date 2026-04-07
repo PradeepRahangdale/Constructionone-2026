@@ -811,7 +811,7 @@ class ProductController {
       // CACHE CLEAR
       await RedisCache.deletePattern?.("products:*");
       await RedisCache.delete?.("products:");
-
+      await RedisCache.del(`products:subcat:${subcategoryId}*`);
       res.status(201).json({
         status: "success",
         message: "Product created with variants",
@@ -886,7 +886,7 @@ class ProductController {
 
       // clear cache properly
       await RedisCache.deletePattern?.("products:*");
-
+      await RedisCache.del(`products:subcat:${subcategoryId}*`);
       res.status(200).json({
         status: "success",
         message: "Product updated successfully",
@@ -945,7 +945,7 @@ class ProductController {
       //  smart cache clear
       await RedisCache.deletePattern?.("products:*");
       await RedisCache.delete?.(`product:v1:${id}`);
-
+      await RedisCache.del(`products:subcat:${subcategoryId}*`);
       res.json({
         status: "success",
         message: `Product ${disable ? "disabled" : "enabled"} successfully`,
@@ -1256,90 +1256,101 @@ class ProductController {
     }
   }
 
+  // static async getProductBySubCategory(req, res) {
+  //   try {
+  //     const { subcategoryId } = req.params;
+  //     const { page = 1, limit = 10, type } = req.query;
+
+  //     const skip = (page - 1) * limit;
+
+  //     const filter = {
+  //       subcategoryId,
+  //     };
+
+  //     if (type) {
+  //       const variantIds = await Variant.find({
+  //         Type: { $regex: new RegExp(`^${type}$`, "i") }, // case insensitive
+  //       }).select("_id");
+
+  //       filter.defaultVariantId = {
+  //         $in: variantIds.map((v) => v._id),
+  //       };
+  //     }
+
+  //     const products = await Product.find(filter)
+  //       .select(
+  //         "name images avgRating reviewCount slug properties minDiscount maxDiscount vendorId defaultVariantId",
+  //       )
+  //       .populate({
+  //         path: "vendorId",
+  //         select: "firstName lastName",
+  //       })
+  //       .populate({
+  //         path: "defaultVariantId",
+  //         select: "price discount Type",
+  //       })
+  //       .skip(skip)
+  //       .limit(Number(limit));
+
+  //     const formattedProducts = products.map((p) => ({
+  //       id: p._id,
+  //       name: p.name,
+  //       images: p.images,
+  //       avgRating: p.avgRating,
+  //       reviewCount: p.reviewCount,
+  //       slug: p.slug,
+  //       properties: p.properties,
+  //       minDiscount: p.minDiscount,
+  //       maxDiscount: p.maxDiscount,
+
+  //       vendor: {
+  //         firstName: p.vendorId?.firstName,
+  //         lastName: p.vendorId?.lastName,
+  //       },
+
+  //       price: p.defaultVariantId?.price ?? null,
+  //       discount: p.defaultVariantId?.discount ?? null,
+  //       type: p.defaultVariantId?.Type ?? null,
+  //     }));
+
+  //     const total = await Product.countDocuments(filter);
+
+  //     res.json({
+  //       success: true,
+  //       page: Number(page),
+  //       totalPages: Math.ceil(total / limit),
+  //       totalProducts: total,
+  //       products: formattedProducts,
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
+  //     res.status(500).json({ message: error.message });
+  //   }
+  // }
+
   static async getProductBySubCategory(req, res) {
-    // try {
-    //   const { subcategoryId } = req.params;
-    //   const { page = 1, limit = 10, type } = req.query;
-
-    //   const skip = (page - 1) * limit;
-
-    //   // 🔥 STEP 1: base filter
-    //   const filter = {
-    //     subcategoryId,
-    //   };
-
-    //   //  STEP 2: TYPE FILTER (IMPORTANT)
-    //   if (type) {
-    //     const variantIds = await Variant.find({ Type: type }).select("_id");
-
-    //     filter.defaultVariantId = {
-    //       $in: variantIds.map((v) => v._id),
-    //     };
-    //   }
-
-    //   const products = await Product.find(filter)
-    //     .select(
-    //       "name images avgRating reviewCount slug properties minDiscount maxDiscount vendorId defaultVariantId",
-    //     )
-    //     .populate({
-    //       path: "vendorId",
-    //       select: "firstName lastName",
-    //     })
-    //     .populate({
-    //       path: "defaultVariantId", // 👈 MAIN FIX
-    //       select: "price discount Type",
-    //     })
-    //     .skip(skip)
-    //     .limit(Number(limit));
-
-    //   // 🔥 STEP 4: CLEAN RESPONSE
-    //   const formattedProducts = products.map((p) => ({
-    //     name: p.name,
-    //     images: p.images,
-    //     avgRating: p.avgRating,
-    //     reviewCount: p.reviewCount,
-    //     slug: p.slug,
-    //     properties: p.properties,
-    //     minDiscount: p.minDiscount,
-    //     maxDiscount: p.maxDiscount,
-
-    //     vendor: {
-    //       firstName: p.vendorId?.firstName,
-    //       lastName: p.vendorId?.lastName,
-    //     },
-
-    //     price: p.defaultVariantId?.price ?? null,
-    //     discount: p.defaultVariantId?.discount ?? null,
-    //     type: p.defaultVariantId?.Type ?? null,
-    //   }));
-
-    //   const total = await Product.countDocuments(filter);
-
-    //   res.json({
-    //     success: true,
-    //     page: Number(page),
-    //     totalPages: Math.ceil(total / limit),
-    //     totalProducts: total,
-    //     products: formattedProducts,
-    //   });
-    // } catch (error) {
-    //   console.error(error);
-    //   res.status(500).json({ message: error.message });
-    // }
-
     try {
       const { subcategoryId } = req.params;
       const { page = 1, limit = 10, type } = req.query;
 
+      const cacheKey = `products:subcat:${subcategoryId}:page:${page}:limit:${limit}:type:${type || "all"}`;
+
+      // 1. CHECK CACHE
+      const cachedData = await RedisCache.get(cacheKey);
+      if (cachedData) {
+        // console.log("CACHE HIT");
+        return res.json(JSON.parse(cachedData));
+      }
+
+      // console.log("CACHE MISS");
+
       const skip = (page - 1) * limit;
 
-      const filter = {
-        subcategoryId,
-      };
+      const filter = { subcategoryId };
 
       if (type) {
         const variantIds = await Variant.find({
-          Type: { $regex: new RegExp(`^${type}$`, "i") }, // case insensitive
+          Type: { $regex: new RegExp(`^${type}$`, "i") },
         }).select("_id");
 
         filter.defaultVariantId = {
@@ -1372,12 +1383,10 @@ class ProductController {
         properties: p.properties,
         minDiscount: p.minDiscount,
         maxDiscount: p.maxDiscount,
-
         vendor: {
           firstName: p.vendorId?.firstName,
           lastName: p.vendorId?.lastName,
         },
-
         price: p.defaultVariantId?.price ?? null,
         discount: p.defaultVariantId?.discount ?? null,
         type: p.defaultVariantId?.Type ?? null,
@@ -1385,20 +1394,25 @@ class ProductController {
 
       const total = await Product.countDocuments(filter);
 
-      res.json({
+      const response = {
         success: true,
         page: Number(page),
         totalPages: Math.ceil(total / limit),
         totalProducts: total,
         products: formattedProducts,
-      });
+      };
+
+      //  2. SET CACHE
+      await RedisCache.set(cacheKey, JSON.stringify(response), 300);
+
+      res.json(response);
     } catch (error) {
-      console.error(error);
+      // console.error(error);
       res.status(500).json({ message: error.message });
     }
   }
 }
-//asgr
+
 export const addVariant = async (req, res) => {
   try {
     const { productId } = req.params;
@@ -1426,7 +1440,7 @@ export const addVariant = async (req, res) => {
       stock,
       Type,
     });
-
+    await RedisCache.del(`products:subcat:${subcategoryId}*`);
     res.json({
       success: true,
       variant,
