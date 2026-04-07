@@ -247,6 +247,7 @@ class ProductController {
       const matchStage = {
         disable: false,
         varified: true,
+        status: { $ne: "DRAFT" },
       };
 
       // ================= CATEGORY FILTERS =================

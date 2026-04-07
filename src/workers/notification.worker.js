@@ -23,7 +23,6 @@
 // notificationQueue.on('completed', (job) => {
 //   console.log(`Notification job ${job.id} completed`);
 // });
-
 // export default notificationWorker;
 
 import notificationQueue from "../config/notification.queue.js";
