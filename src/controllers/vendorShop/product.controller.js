@@ -704,14 +704,14 @@ class ProductController {
 
       //  safer validation (UPDATED)
       // when vendor add a product to add a varient is required logic
-      // if (!variants || !Array.isArray(variants) || variants.length === 0) {
-      //   throw new APIError("At least one variant is required", 400);
-      // }
+      if (!variants || !Array.isArray(variants) || variants.length === 0) {
+        throw new APIError("At least one variant is required", 400);
+      }
 
       // when vendor add a product so no need to add varient logic
-      if (!variants || !Array.isArray(variants)) {
-        variants = [];
-      }
+      // if (!variants || !Array.isArray(variants)) {
+      //   variants = [];
+      // }
 
       // HANDLE FILES
       const uploadedImages = req.files?.images?.map((f) => f.location) || [];

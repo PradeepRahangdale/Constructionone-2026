@@ -20,7 +20,8 @@ router.get("/products", authMiddleware, ProductController.getProducts);
 router.get(
   "/product/subcategory/:subcategoryId",
   authMiddleware,
-  ProductController.getProductBySubCategory)
+  ProductController.getProductBySubCategory,
+);
 
 // GET top selling products (must be BEFORE /product/:id to avoid wildcard conflict)
 router.get(
