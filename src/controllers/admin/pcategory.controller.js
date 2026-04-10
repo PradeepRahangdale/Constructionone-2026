@@ -12,7 +12,7 @@ const CACHE_TTL = 300; // 5 minutes
 
 export const createPcategory = catchAsync(async (req, res) => {
     if (req.file) req.body.image = req.file.location;
-    const pcategory = await pcategoryService.create(req.body, req.user._id);
+    const pcategory = await pcategoryService.create(req.body, req.user.id);
 
     // Invalidate all list caches
     await RedisCache.deletePattern(CACHE_PREFIX + '*');

@@ -12,7 +12,7 @@ const CACHE_TTL = 300; // 5 minutes
 
 export const createSubCategory = catchAsync(async (req, res) => {
     if (req.file) req.body.image = req.file.location;
-    const subCategory = await subCategoryService.create(req.body, req.user._id);
+    const subCategory = await subCategoryService.create(req.body, req.user.id);
 
     await RedisCache.deletePattern(CACHE_PREFIX + '*');
 

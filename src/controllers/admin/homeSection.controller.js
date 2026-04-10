@@ -7,7 +7,7 @@ import { ApiResponse } from '../../utils/ApiResponse.js';
 
 // POST /api/v1/admin/home-sections
 export const createHomeSection = catchAsync(async (req, res) => {
-    const section = await homeSectionService.createSection(req.body, req.user._id);
+    const section = await homeSectionService.createSection(req.body, req.user.id);
     res.status(201).json(new ApiResponse(201, { section }, 'Home section created'));
 });
 

@@ -28,7 +28,7 @@ export const createPlatformModule = catchAsync(async (req, res, next) => {
         title, image, icon,
         type: type?.toUpperCase(),
         routePath, order,
-        createdBy: req.user._id,
+        createdBy: req.user.id,
     });
 
     // Invalidate all list caches (using pattern to clear paginated results)

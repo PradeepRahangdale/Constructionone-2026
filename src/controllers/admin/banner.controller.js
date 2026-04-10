@@ -11,7 +11,7 @@ const CACHE_TTL = 300; // 5 minutes
 export const createBanner = catchAsync(async (req, res) => {
     if (req.file) req.body.image = req.file.location;
 
-    const banner = await bannerService.create(req.body, req.user._id);
+    const banner = await bannerService.create(req.body, req.user.id);
     await RedisCache.delete(CACHE_LIST);
 
     res.status(201).json(new ApiResponse(201, banner, 'Banner created successfully'));
