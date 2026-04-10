@@ -105,23 +105,17 @@ export const loginAdmin = catchAsync(async (req, res, next) => {
 });
 
 // Get Own Admin Profile
-export const getAdminMe = catchAsync(async (req, res) => {
-    const admin = req.user; // Already fetched from DB by requireAuth middleware
+export const getAdminMe = catchAsync(async (req, res, next) => {
+    const admin = await User.findById(req.user.id).lean();
+    if (!admin) return next(new APIError(404, 'Admin not found'));
+
+    // Remove internal/sensitive fields (password is already select:false)
+    admin.id = admin._id;
+    delete admin._id;
+    delete admin.__v;
+
     res.status(200).json(
-        new ApiResponse(200, {
-            admin: {
-                id: admin._id,
-                firstName: admin.firstName,
-                lastName: admin.lastName,
-                email: admin.email,
-                phone: admin.phone,
-                role: admin.role,
-                permissions: admin.permissions,
-                isVerified: admin.isVerified,
-                lastLoginAt: admin.lastLoginAt,
-                createdAt: admin.createdAt,
-            },
-        }, 'Admin profile fetched successfully')
+        new ApiResponse(200, { admin }, 'Admin profile fetched successfully')
     );
 });
 
