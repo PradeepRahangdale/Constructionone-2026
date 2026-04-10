@@ -14,7 +14,7 @@ export const createSubCategory = catchAsync(async (req, res) => {
     if (req.file) req.body.image = req.file.location;
     const subCategory = await subCategoryService.create(req.body, req.user._id);
 
-    await RedisCache.delete(CACHE_PREFIX);
+    await RedisCache.deletePattern(CACHE_PREFIX + '*');
 
     res.status(201).json(new ApiResponse(201, subCategory, 'SubCategory created successfully'));
 });
@@ -46,7 +46,7 @@ export const updateSubCategory = catchAsync(async (req, res) => {
     const subCategory = await subCategoryService.update(req.params.id, req.body);
 
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${SINGLE_PREFIX}${req.params.id}`),
     ]);
 
@@ -57,7 +57,7 @@ export const deleteSubCategory = catchAsync(async (req, res) => {
     await subCategoryService.remove(req.params.id);
 
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${SINGLE_PREFIX}${req.params.id}`),
     ]);
 
@@ -68,7 +68,7 @@ export const toggleSubCategory = catchAsync(async (req, res) => {
     const subCategory = await subCategoryService.toggle(req.params.id);
 
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${SINGLE_PREFIX}${req.params.id}`),
     ]);
 
