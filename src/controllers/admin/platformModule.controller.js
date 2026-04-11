@@ -28,11 +28,11 @@ export const createPlatformModule = catchAsync(async (req, res, next) => {
         title, image, icon,
         type: type?.toUpperCase(),
         routePath, order,
-        createdBy: req.user._id,
+        createdBy: req.user.id,
     });
 
-    // Invalidate list cache
-    await RedisCache.delete(CACHE_PREFIX);
+    // Invalidate all list caches (using pattern to clear paginated results)
+    await RedisCache.deletePattern(CACHE_PREFIX + '*');
 
     return res.status(201).json(
         new ApiResponse(201, module, 'Platform module created successfully')
@@ -131,7 +131,7 @@ export const updatePlatformModule = catchAsync(async (req, res, next) => {
 
     // Invalidate caches
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${CACHE_SINGLE}${req.params.id}`),
     ]);
 
@@ -145,7 +145,7 @@ export const deletePlatformModule = catchAsync(async (req, res, next) => {
     if (!module) return next(new APIError(404, 'Platform module not found'));
 
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${CACHE_SINGLE}${req.params.id}`),
     ]);
 
@@ -163,7 +163,7 @@ export const toggleModuleActive = catchAsync(async (req, res, next) => {
     if (!module) return next(new APIError(404, 'Platform module not found'));
 
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${CACHE_SINGLE}${req.params.id}`),
     ]);
 
@@ -181,7 +181,7 @@ export const toggleModuleVisibility = catchAsync(async (req, res, next) => {
     if (!module) return next(new APIError(404, 'Platform module not found'));
 
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${CACHE_SINGLE}${req.params.id}`),
     ]);
 

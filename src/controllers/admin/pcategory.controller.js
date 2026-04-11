@@ -12,10 +12,10 @@ const CACHE_TTL = 300; // 5 minutes
 
 export const createPcategory = catchAsync(async (req, res) => {
     if (req.file) req.body.image = req.file.location;
-    const pcategory = await pcategoryService.create(req.body, req.user._id);
+    const pcategory = await pcategoryService.create(req.body, req.user.id);
 
     // Invalidate all list caches
-    await RedisCache.delete(CACHE_PREFIX);
+    await RedisCache.deletePattern(CACHE_PREFIX + '*');
 
     res.status(201).json(new ApiResponse(201, pcategory, 'Pcategory created successfully'));
 });
@@ -48,7 +48,7 @@ export const updatePcategory = catchAsync(async (req, res) => {
 
     // Invalidate list and single caches
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${SINGLE_PREFIX}${req.params.id}`),
     ]);
 
@@ -59,7 +59,7 @@ export const deletePcategory = catchAsync(async (req, res) => {
     await pcategoryService.remove(req.params.id);
 
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${SINGLE_PREFIX}${req.params.id}`),
     ]);
 
@@ -70,7 +70,7 @@ export const togglePcategory = catchAsync(async (req, res) => {
     const pcategory = await pcategoryService.toggle(req.params.id);
 
     await Promise.all([
-        RedisCache.delete(CACHE_PREFIX),
+        RedisCache.deletePattern(CACHE_PREFIX + '*'),
         RedisCache.delete(`${SINGLE_PREFIX}${req.params.id}`),
     ]);
 

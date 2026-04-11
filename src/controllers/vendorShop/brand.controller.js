@@ -67,7 +67,7 @@ class BrandController {
   static async getVendorBrands(req, res) {
     const { vendorId } = req.params;
     const { search } = req.query; //<-- brand name search
-    
+
     const cacheKey = `brands:${vendorId}:${search || ""}`;
     const cached = await RedisCache.get(cacheKey);
     if (cached) return res.json(cached);
@@ -160,10 +160,29 @@ class BrandController {
   }
 
   //  CREATE
+  // static async createBrand(req, res, next) {
+  //   try {
+  //     const brand = await Brand.create({
+  //       ...req.body,
+  //       createdBy: req.user?.id,
+  //     });
+
+  //     await RedisCache.deletePattern("brands:*");
+
+  //     res.status(201).json({
+  //       status: "success",
+  //       message: "Brand created successfully",
+  //       data: { brand },
+  //     });
+  //   } catch (err) {
+  //     next(err);
+  //   }
+  // }
   static async createBrand(req, res, next) {
     try {
       const brand = await Brand.create({
         ...req.body,
+        logo: req.file ? req.file.path : null, // 👈 important change
         createdBy: req.user?.id,
       });
 
@@ -178,7 +197,6 @@ class BrandController {
       next(err);
     }
   }
-
   //  UPDATE
   static async updateBrand(req, res, next) {
     try {

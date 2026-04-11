@@ -3,7 +3,7 @@ import { catchAsync } from '../../middlewares/errorHandler.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
 
 export const createSection = catchAsync(async (req, res) => {
-    const section = await trendingService.createTrendingSection(req.body, req.user._id);
+    const section = await trendingService.createTrendingSection(req.body, req.user.id);
     return res.status(201).json(new ApiResponse(201, section, 'Trending Section created successfully'));
 });
 
