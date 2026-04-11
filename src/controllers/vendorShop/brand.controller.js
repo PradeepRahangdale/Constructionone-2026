@@ -3,6 +3,7 @@ import { APIError } from "../../middlewares/errorHandler.js";
 import RedisCache from "../../utils/redisCache.js";
 import productModel from "../../models/vendorShop/product.model.js";
 import mongoose from "mongoose";
+import { deleteFromS3 } from "../../middlewares/uploads.js";
 
 class BrandController {
   //  GET ALL

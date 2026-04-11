@@ -71,6 +71,22 @@ export const s3Uploader = () =>
     }),
   });
 
+export const deleteFromS3 = async (key) => {
+  try {
+    if (!key) return;
+
+    const command = new DeleteObjectCommand({
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: key,
+    });
+
+    await s3.send(command);
+    // console.log("✅ S3 file deleted:", key);
+  } catch (err) {
+    // console.error("❌ S3 delete error:", err.message);
+  }
+};
+
 export const localUploader = () =>
   multer({
     storage: multer.diskStorage({
