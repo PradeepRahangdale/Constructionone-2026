@@ -26,7 +26,16 @@ const notificationSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ["admin", "system", "ORDER"],
+      enum: [
+        "admin",
+        "system",
+        "ORDER",
+        "SYSTEM",
+        "ADMIN",
+        "REMINDER",
+        "PAYMENT",
+        "COMPLETED",
+      ],
       default: "system",
     },
     isRead: {

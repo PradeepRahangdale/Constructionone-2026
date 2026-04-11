@@ -6,7 +6,6 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
-
 const userSchema = new mongoose.Schema(
   {
     firstName: {
@@ -123,7 +122,6 @@ const userSchema = new mongoose.Schema(
     },
 
     fcmToken: {
-
       type: String,
       trim: true,
     },
@@ -206,4 +204,3 @@ userSchema.index({ role: 1, createdAt: -1 });
 userSchema.index({ isDisabled: 1 });
 
 export default mongoose.model("User", userSchema);
-

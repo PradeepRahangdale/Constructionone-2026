@@ -39,6 +39,17 @@ const orderSchema = new mongoose.Schema(
           ],
           default: "PENDING",
         },
+
+        //orderStatus: [
+        //   "PENDING",
+        //   "ACCEPTED",
+        //   "READY_FOR_PICKUP",
+        //   "OUT_FOR_DELIVERY",
+        //   "PICKED_UP_BY_LOGISTICS",
+        //   "DELIVERED",
+        //   "CANCELLED"
+        // ]
+
         indexStatus: Number,
         thumbnail: String,
       },

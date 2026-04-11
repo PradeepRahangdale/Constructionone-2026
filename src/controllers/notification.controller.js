@@ -2,7 +2,7 @@ import User from "../models/user/user.model.js";
 import { VendorProfile } from "../models/vendorShop/vendor.model.js";
 import Notification from "../models/notification.model.js";
 import { notifyUser } from "../utils/notifyUser.js";
-
+import mongoose from "mongoose";
 //admin funtions for notification to users and vendors
 export const notifyOnlyAllUsers = async (req, res, next) => {
   try {
@@ -26,9 +26,7 @@ export const notifyOnlyAllUsers = async (req, res, next) => {
     }
 
     await Promise.all(
-      users.map((user) =>
-        notifyUser({ userId: user._id, title, message, image, type: "ADMIN" }),
-      ),
+      users.map((user) => notifyUser({ title, message, image, type: "ADMIN" })),
     );
 
     res.status(200).json({
@@ -199,21 +197,56 @@ export const markNotificationRead = async (req, res, next) => {
   }
 };
 //get for notification
+// export const getUserNotifications = async (req, res) => {
+//   try {
+//     if (!req.user?.id) {
+//       return res.status(401).json({ message: "Unauthorized" });
+//     }
+//     const userId = req.user.id;
+
+//     // const query = {
+//     //   expiresAt: { $gt: new Date() },
+//     //   vendorId: { $exists: false }, // vendorId wali exclude karo
+//     //   $or: [
+//     //     { userId: userId }, // user-specific
+//     //     { userId: null }, // global (null set hai)
+//     //     { userId: { $exists: false } }, // global (field hi nahi)
+//     //   ],
+//     // };
+
+//     const query = {
+//       expiresAt: { $gt: new Date() },
+//       vendorId: null,
+//       $or: [
+//         { userId: new mongoose.Types.ObjectId(userId) }, // ✅ fix
+//         { userId: null },
+//       ],
+//     };
+//     const notifications = await Notification.find(query).sort({
+//       createdAt: -1,
+//     });
+
+//     res.json({
+//       success: true,
+//       notifications,
+//     });
+//   } catch (err) {
+//     res.status(500).json({ message: "Failed to fetch notifications" });
+//   }
+// };
+
 export const getUserNotifications = async (req, res) => {
   try {
     if (!req.user?.id) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const userId = req.user.id;
+
+    const userId = new mongoose.Types.ObjectId(req.user.id);
 
     const query = {
       expiresAt: { $gt: new Date() },
-      vendorId: { $exists: false }, // vendorId wali exclude karo
-      $or: [
-        { userId: userId }, // user-specific
-        { userId: null }, // global (null set hai)
-        { userId: { $exists: false } }, // global (field hi nahi)
-      ],
+
+      $or: [{ userId: userId }, { userId: null, vendorId: null }],
     };
 
     const notifications = await Notification.find(query).sort({
@@ -235,14 +268,9 @@ export const getVendorNotifications = async (req, res) => {
     }
 
     const vendorId = req.user.id;
+
     const query = {
-      expiresAt: { $gt: new Date() },
-      userId: { $exists: false },
-      $or: [
-        { vendorId: vendorId },
-        { vendorId: null },
-        { vendorId: { $exists: false } },
-      ],
+      $or: [{ vendorId: vendorId }, { userId: null, vendorId: null }],
     };
 
     const notifications = await Notification.find(query).sort({
@@ -311,5 +339,17 @@ export const sendOrderNotificationToVendor = async (subOrder) => {
     });
   } catch (err) {
     console.error("sendOrderNotificationToVendor failed:", err.message);
+  }
+};
+
+export const getAllnotification = async (req, res, next) => {
+  try {
+    const notifications = await Notification.find().sort({ createdAt: -1 });
+    res.status(200).json({
+      success: true,
+      notifications,
+    });
+  } catch (err) {
+    next(err);
   }
 };

@@ -101,15 +101,15 @@ export const notifyUser = async ({
     if (userId && vendorId) {
       throw new Error("Pass either userId or vendorId, not both");
     }
-
     // save notification (same as before)
+
     await Notification.create({
       userId: userId || null,
       vendorId: vendorId || null,
       title,
       message,
       image: image || null,
-      type,
+      type: type?.trim().toUpperCase(),
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
 

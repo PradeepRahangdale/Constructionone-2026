@@ -15,15 +15,23 @@ export const requireRole = (...roles) => {
 };
 export const requirePermission = (permission) => {
   return (req, res, next) => {
+    // Check user exists
+    if (!req.user) {
+      return next(new APIError(401, "Unauthorized"));
+    }
+
     // Admin has all permissions
     if (req.user.role === "ADMIN") {
       return next();
     }
-    if (!req.user || !req.user.permissions.includes(permission)) {
+
+    // Check permissions safely
+    if (!req.user.permissions || !req.user.permissions.includes(permission)) {
       return next(
         new APIError(403, "You do not have permission to perform this action"),
       );
     }
+
     next();
   };
 };

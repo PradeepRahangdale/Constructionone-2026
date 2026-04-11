@@ -5,6 +5,7 @@ import calculateBillSummary from "../../services/calculateBillSummary.js";
 import { APIError } from "../../middlewares/errorHandler.js";
 import Variant from "../../models/vendorShop/variant.model.js";
 import Product from "../../models/vendorShop/product.model.js";
+import Address from "../../models/user/address.model.js";
 import redis from "../../config/redis.config.js";
 
 export const addToCart = async (req, res, next) => {
@@ -386,5 +387,89 @@ export const similarProducts = async (req, res, next) => {
     return res.status(200).json(response);
   } catch (error) {
     next(error);
+  }
+};
+
+// GET /cart/distances?addressId=123
+export const getCartWithDistances = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { addressId } = req.query;
+
+    // 1. Get User Address
+    const address = await Address.findOne({
+      _id: addressId,
+      userId,
+    });
+
+    if (!address) {
+      return res.status(404).json({ message: "Address not found" });
+    }
+
+    const userLat = address.location.coordinates[1];
+    const userLng = address.location.coordinates[0];
+
+    // 2. Get Cart
+    const cart = await Cart.findOne({ userId })
+      .populate({
+        path: "items.variant",
+        populate: {
+          path: "productId",
+          select: "name thumbnail slug vendorId vendorLocation",
+        },
+      })
+      .lean();
+
+    if (!cart) {
+      return res.status(404).json({ message: "Cart is empty" });
+    }
+
+    // 3. Distance Function
+    const getDistanceInKm = (lat1, lon1, lat2, lon2) => {
+      const toRad = (val) => (val * Math.PI) / 180;
+      const R = 6371;
+
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    };
+
+    // 4. Build Response
+    const itemsWithDistance = cart.items
+      .filter((item) => item.variant && item.variant.productId)
+      .map((item) => {
+        const product = item.variant.productId;
+        const vendorLocation = product.vendorLocation;
+
+        let distance = 0;
+
+        if (vendorLocation && vendorLocation.coordinates) {
+          const [vendorLng, vendorLat] = vendorLocation.coordinates;
+
+          distance = getDistanceInKm(vendorLat, vendorLng, userLat, userLng);
+        }
+
+        return {
+          itemId: item._id,
+          productId: product._id,
+          name: product.name,
+          thumbnail: product.thumbnail,
+          quantity: item.quantity,
+          distance: Math.round(distance), // KM
+        };
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: "Cart with distances",
+      items: itemsWithDistance,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };

@@ -1,19 +1,18 @@
-//asgr
-import mongoose from 'mongoose';
+
+import mongoose from "mongoose";
 const addressSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
+      ref: "User",
     },
-    userName:{
-      type:String,
-      
+    userName: {
+      type: String,
     },
     label: {
       type: String,
-      enum: ['HOME', 'OFFICE', 'OTHER'],
-      default: 'HOME'
+      enum: ["HOME", "OFFICE", "OTHER"],
+      default: "HOME",
     },
     addressLine: String,
     city: String,
@@ -21,14 +20,14 @@ const addressSchema = new mongoose.Schema(
 
     location: {
       lat: Number,
-      lng: Number
+      lng: Number,
     },
-    landMark:{
-      type:String,
-      default:null
-    }
+    landMark: {
+      type: String,
+      default: null,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
-export default mongoose.model('Address', addressSchema);
+export default mongoose.model("Address", addressSchema);

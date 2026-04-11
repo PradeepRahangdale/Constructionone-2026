@@ -7,6 +7,7 @@ import {
   getUserNotifications,
   notifySingleUser,
   markNotificationRead,
+  getAllnotification,
 } from "../controllers/notification.controller.js";
 import { requireAuth } from "../middlewares/auth.middleware.js";
 import { requireRole } from "../middlewares/role.middleware.js";
@@ -38,6 +39,7 @@ router.post(
   notifyAllVendorsAndUsers,
 );
 
+router.get("/notifications", requireAuth, getAllnotification);
 router.patch("/notification/:id", requireAuth, markNotificationRead);
 router.get("/user-notifications", requireAuth, getUserNotifications);
 router.get("/vendor-notifications", vendorMiddleware, getVendorNotifications);

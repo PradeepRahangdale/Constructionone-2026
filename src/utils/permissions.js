@@ -1,0 +1,16 @@
+export const PERMISSIONS = {
+  // Dashboard
+  VIEW_DASHBOARD: "VIEW_DASHBOARD",
+
+  // Users
+  GET_ALL_USERS: "GET_ALL_USERS",
+  TOGGLE_USER_STATUS: "TOGGLE_USER_STATUS",
+
+  // Vendors (sirf view / toggle)
+  GET_ALL_VENDORS: "GET_ALL_VENDORS",
+  TOGGLE_VENDOR_STATUS: "TOGGLE_VENDOR_STATUS", // active / inactive
+
+  // Orders
+  GET_ALL_ORDERS: "GET_ALL_ORDERS",
+  UPDATE_ORDER_STATUS: "UPDATE_ORDER_STATUS",
+};
