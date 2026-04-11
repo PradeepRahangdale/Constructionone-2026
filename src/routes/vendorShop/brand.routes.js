@@ -7,6 +7,7 @@ import {
   updateBrandSchema,
 } from "../../validations/brand.validation.js";
 import { requireAuth } from "../../middlewares/auth.middleware.js";
+import { s3Uploader } from "../../middlewares/uploads.js";
 
 const router = Router();
 
@@ -19,14 +20,16 @@ router.get("/brands/:id", requireAuth, BrandController.getBrand);
 router.post(
   "/brands",
   requireAuth,
+  s3Uploader().single("logo"),
   validate(createBrandSchema),
   BrandController.createBrand,
 );
 
-router.patch(
+router.put(
   "/brands/:id",
   requireAuth,
-  validate(updateBrandSchema),
+  s3Uploader().single("logo"), // same as create
+  validate(updateBrandSchema), // optional (agar chaho)
   BrandController.updateBrand,
 );
 

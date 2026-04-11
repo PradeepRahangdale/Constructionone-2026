@@ -6,12 +6,12 @@ export const createBrandSchema = Joi.object({
   pcategoryId: Joi.string().required(),
   categoryId: Joi.string().required(),
   subcategoryId: Joi.string().required(),
-  logo: Joi.string().allow("", null),
+  // logo: Joi.string().allow("", null),
   description: Joi.string().allow("", null),
-  status: Joi.string().valid("active", "inactive"),
+  // status: Joi.string().valid("active", "inactive"),
 });
 
 export const updateBrandSchema = createBrandSchema.fork(
   ["name", "moduleId", "pcategoryId", "categoryId", "subcategoryId"],
-  (f) => f.optional()
+  (f) => f.optional(),
 );

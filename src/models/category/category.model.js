@@ -3,12 +3,12 @@ import slugify from "slugify";
 
 const categorySchema = new mongoose.Schema(
   {
-    moduleId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "PlatformModule",
-      required: [true, "Module ID is required"],
-      index: true,
-    },
+    // moduleId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "PlatformModule",
+    //   required: [true, "Module ID is required"],
+    //   index: true,
+    // },
     pcategoryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pcategory",
@@ -30,11 +30,13 @@ const categorySchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    brandId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Brand",
-      default: null,
-    },
+
+    // brandId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "Brand",
+    //   default: null,
+    // },
+    
     order: {
       type: Number,
       default: 0,

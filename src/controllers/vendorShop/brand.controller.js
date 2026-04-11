@@ -182,14 +182,14 @@ class BrandController {
     try {
       const brand = await Brand.create({
         ...req.body,
-        logo: req.file ? req.file.path : null, // 👈 important change
+        logo: req.file ? req.file.location : null, // 👈 S3 URL
         createdBy: req.user?.id,
       });
 
       await RedisCache.deletePattern("brands:*");
 
       res.status(201).json({
-        status: "success",
+        success: true,
         message: "Brand created successfully",
         data: { brand },
       });
@@ -200,18 +200,34 @@ class BrandController {
   //  UPDATE
   static async updateBrand(req, res, next) {
     try {
-      const brand = await Brand.findByIdAndUpdate(req.params.id, req.body, {
+      const existingBrand = await Brand.findById(req.params.id);
+      if (!existingBrand) throw new APIError(404, "Brand not found");
+
+      let updatedData = { ...req.body };
+
+      if (req.file) {
+        // 👉 OLD logo delete (optional but recommended)
+        if (existingBrand.logo) {
+          const oldKey = existingBrand.logo.split(".com/")[1]; // extract S3 key
+
+          if (oldKey) {
+            await deleteFromS3(oldKey); // 👈 tumhara helper function
+          }
+        }
+
+        updatedData.logo = req.file.location;
+      }
+
+      const brand = await Brand.findByIdAndUpdate(req.params.id, updatedData, {
         new: true,
         runValidators: true,
       });
 
-      if (!brand) throw new APIError(404, "Brand not found");
-
-      await RedisCache.delete("brands:");
+      await RedisCache.deletePattern("brands:*"); // 👈 better than single delete
       await RedisCache.delete(`brand:${req.params.id}`);
 
       res.json({
-        status: "success",
+        success: true,
         message: "Brand updated successfully",
         data: { brand },
       });
@@ -228,6 +244,7 @@ class BrandController {
 
       await RedisCache.delete("brands:");
       await RedisCache.delete(`brand:${req.params.id}`);
+      await RedisCache.deletePattern("brands:*");
 
       res.json({
         status: "success",
@@ -250,6 +267,7 @@ class BrandController {
 
       await RedisCache.delete("brands:");
       await RedisCache.delete(`brand:${req.params.id}`);
+      await RedisCache.deletePattern("brands:*");
 
       res.json({
         status: "success",

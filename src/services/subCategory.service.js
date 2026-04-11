@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import { APIError } from "../middlewares/errorHandler.js";
 
 export const create = async (data, userId) => {
-  const { moduleId, pcategoryId, categoryId, name } = data;
+  const { pcategoryId, categoryId, name } = data;
 
   // Validate Parent and Category exist
   const parent = await Pcategory.findById(pcategoryId);

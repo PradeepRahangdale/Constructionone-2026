@@ -1,5 +1,5 @@
 import Wishlist from "../../models/user/wishlist.model.js";
-import redisConnection from "../../config/redis.config.js";
+import RedisCache from "../../utils/redisCache.js";
 
 export const toggleWishlist = async (req, res, next) => {
   try {
@@ -29,13 +29,7 @@ export const toggleWishlist = async (req, res, next) => {
     }
 
     await wishlist.save();
-
-    await redisConnection.set(
-      `wishlist:${userId}`,
-      JSON.stringify(wishlist),
-      "EX",
-      300, // Cache for 10 minutes
-    );
+    await RedisCache.delete(`wishlist:${userId}`);
     res.json({
       message,
       wishlist,
@@ -48,7 +42,7 @@ export const toggleWishlist = async (req, res, next) => {
 export const getWishlist = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const cached = await redisConnection.get(`wishlist:${userId}`);
+    const cached = await RedisCache.get(`wishlist:${userId}`);
 
     if (cached) {
       return res.status(200).json({ data: JSON.parse(cached) });
@@ -56,11 +50,9 @@ export const getWishlist = async (req, res, next) => {
 
     const wishlist = await Wishlist.findOne({ userId }).populate("products");
 
-    await redisConnection.set(
+    await RedisCache.set(
       `wishlist:${userId}`,
       JSON.stringify(wishlist || { products: [] }),
-      "EX",
-      600, // Cache for 10 minutes
     );
 
     res.json({ data: wishlist || { products: [] } });
