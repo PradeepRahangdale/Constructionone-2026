@@ -49,11 +49,9 @@ class StateController {
   // ✅ UPDATE
   static async updateState(req, res, next) {
     try {
-      const state = await State.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true }
-      );
+      const state = await State.findByIdAndUpdate(req.params.id, req.body, {
+        new: true,
+      });
 
       if (!state) throw new APIError("State not found", 404);
 
@@ -67,21 +65,42 @@ class StateController {
   }
 
   // ✅ TOGGLE STATUS (YOU WERE MISSING THIS)
+  // static async toggleStateStatus(req, res, next) {
+  //   try {
+  //     const { status } = req.body;
+
+  //     const state = await State.findByIdAndUpdate(
+  //       req.params.id,
+  //       { status },
+  //       { new: true },
+  //     );
+
+  //     if (!state) throw new APIError("State not found", 404);
+
+  //     res.json({
+  //       status: "success",
+  //       message: `State ${status}`,
+  //       data: { state },
+  //     });
+  //   } catch (err) {
+  //     next(err);
+  //   }
+  // }
+
   static async toggleStateStatus(req, res, next) {
     try {
-      const { status } = req.body;
-
-      const state = await State.findByIdAndUpdate(
-        req.params.id,
-        { status },
-        { new: true }
-      );
+      const state = await State.findById(req.params.id);
 
       if (!state) throw new APIError("State not found", 404);
 
+      // Toggle between "active" and "inactive"
+      state.status = state.status === "active" ? "inactive" : "active";
+
+      await state.save();
+
       res.json({
         status: "success",
-        message: `State ${status}`,
+        message: `State ${state.status}`,
         data: { state },
       });
     } catch (err) {

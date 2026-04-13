@@ -50,11 +50,9 @@ class CityController {
   // ✅ UPDATE
   static async updateCity(req, res, next) {
     try {
-      const city = await City.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true }
-      );
+      const city = await City.findByIdAndUpdate(req.params.id, req.body, {
+        new: true,
+      });
 
       if (!city) throw new APIError("City not found", 404);
 
@@ -70,19 +68,18 @@ class CityController {
   // ✅ TOGGLE STATUS (was missing)
   static async toggleCityStatus(req, res, next) {
     try {
-      const { status } = req.body;
-
-      const city = await City.findByIdAndUpdate(
-        req.params.id,
-        { status },
-        { new: true }
-      );
+      const city = await City.findById(req.params.id);
 
       if (!city) throw new APIError("City not found", 404);
 
+      // Toggle between "active" and "inactive"
+      city.status = city.status === "active" ? "inactive" : "active";
+
+      await city.save();
+
       res.json({
         status: "success",
-        message: `City ${status}`,
+        message: `City ${city.status}`,
         data: { city },
       });
     } catch (err) {

@@ -20,7 +20,7 @@ const stateSchema = new mongoose.Schema(
       index: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 stateSchema.index({ countryId: 1, name: 1 }, { unique: true });
