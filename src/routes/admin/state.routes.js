@@ -1,27 +1,23 @@
 import { Router } from "express";
 import StateController from "../../controllers/admin/state.controller.js";
-
-
 import { requireAuth } from "../../middlewares/auth.middleware.js";
-
 const router = Router();
 
 // Base: /api/v1/material
-
 router.get("/states", requireAuth, StateController.getStates);
 router.get("/states/:id", requireAuth, StateController.getState);
 
 router.post(
   "/states",
   requireAuth,
- 
+
   StateController.createState,
 );
 
-router.patch(
+router.put(
   "/states/:id",
   requireAuth,
-  
+
   StateController.updateState,
 );
 
@@ -30,7 +26,5 @@ router.patch(
   requireAuth,
   StateController.toggleStateStatus,
 );
-
 router.delete("/states/:id", requireAuth, StateController.deleteState);
-
 export default router;

@@ -1,4 +1,4 @@
-import Country from "../../models/admin/country.model.js";// Sanvi
+import Country from "../../models/admin/country.model.js"; // Sanvi
 import { APIError } from "../../middlewares/errorHandler.js";
 
 class CountryController {
@@ -37,11 +37,9 @@ class CountryController {
   // ✅ UPDATE
   static async updateCountry(req, res, next) {
     try {
-      const country = await Country.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true }
-      );
+      const country = await Country.findByIdAndUpdate(req.params.id, req.body, {
+        new: true,
+      });
       if (!country) throw new APIError("Country not found", 404);
 
       res.json({ status: "success", data: { country } });
@@ -53,19 +51,20 @@ class CountryController {
   // ✅ TOGGLE STATUS (you were missing this 🚨)
   static async toggleCountryStatus(req, res, next) {
     try {
-      const { status } = req.body;
+      const country = await Country.findById(req.params.id);
 
-      const country = await Country.findByIdAndUpdate(
-        req.params.id,
-        { status },
-        { new: true }
-      );
+      if (!country) {
+        throw new APIError("Country not found", 404);
+      }
 
-      if (!country) throw new APIError("Country not found", 404);
+      const newStatus = country.status === "active" ? "inactive" : "active";
+
+      country.status = newStatus;
+      await country.save();
 
       res.json({
         status: "success",
-        message: `Country ${status}`,
+        message: `Country ${newStatus}`,
         data: { country },
       });
     } catch (err) {
@@ -78,6 +77,22 @@ class CountryController {
     try {
       await Country.findByIdAndDelete(req.params.id);
       res.json({ status: "success", message: "Country deleted" });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getAllActiveCountries(req, res, next) {
+    try {
+      const countries = await Country.find({ status: "active" }).sort({
+        name: 1,
+      }); // optional sorting A-Z
+
+      res.json({
+        status: "success",
+        results: countries.length,
+        data: { countries },
+      });
     } catch (err) {
       next(err);
     }

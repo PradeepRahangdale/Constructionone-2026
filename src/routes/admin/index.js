@@ -17,6 +17,7 @@ import adminOrderRoutes from "./order.routes.js";
 import globalSearchRoutes from "./globalSearch.routes.js";
 import adminReviewRoutes from "./review.routes.js";
 import trendingRoutes from "./trending.routes.js";
+// import countryRoute from "./country.routes.js";
 
 const router = Router();
 

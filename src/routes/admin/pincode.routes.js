@@ -27,7 +27,7 @@ router.post(
   PincodeController.bulkCreatePincodes,
 );
 
-router.patch(
+router.put(
   "/pincodes/:id",
   requireAuth,
   //   validate(updatePincodeSchema),

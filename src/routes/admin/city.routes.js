@@ -21,7 +21,7 @@ router.post(
   CityController.createCity,
 );
 
-router.patch(
+router.put(
   "/cities/:id",
   requireAuth,
   //   validate(updateCitySchema),

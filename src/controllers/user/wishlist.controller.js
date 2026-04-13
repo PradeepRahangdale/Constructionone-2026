@@ -1,6 +1,53 @@
 import Wishlist from "../../models/user/wishlist.model.js";
 import RedisCache from "../../utils/redisCache.js";
 
+export const addToWishlist = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { productId } = req.body;
+
+    let wishlist = await Wishlist.findOne({ userId });
+
+    // Agar wishlist exist nahi karti
+    if (!wishlist) {
+      wishlist = new Wishlist({
+        userId,
+        products: [productId],
+      });
+
+      await wishlist.save();
+      await RedisCache.delete(`wishlist:${userId}`);
+
+      return res.status(201).json({
+        message: "Added to wishlist",
+        wishlist,
+      });
+    }
+
+    // Already exist check
+    const exists = wishlist.products.some((id) => id.toString() === productId);
+
+    if (exists) {
+      return res.status(400).json({
+        message: "Product already in wishlist",
+      });
+    }
+
+    // Add product
+    wishlist.products.push(productId);
+    await wishlist.save();
+
+    // Clear cache
+    await RedisCache.delete(`wishlist:${userId}`);
+
+    res.status(200).json({
+      message: "Added to wishlist",
+      wishlist,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 export const toggleWishlist = async (req, res, next) => {
   try {
     const userId = req.user.id;

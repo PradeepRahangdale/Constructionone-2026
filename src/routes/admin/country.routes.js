@@ -11,6 +11,12 @@ const router = Router();
 
 // Base: /api/v1
 
+router.get(
+  "/countries/active",
+  requireAuth,
+  CountryController.getAllActiveCountries,
+);
+
 router.get("/countries", requireAuth, CountryController.getCountries);
 router.get("/countries/:id", requireAuth, CountryController.getCountry);
 
@@ -21,8 +27,7 @@ router.post(
   CountryController.createCountry,
 );
 
-
-router.patch(
+router.put(
   "/countries/:id",
   requireAuth,
   //   validate(updateCountrySchema),
