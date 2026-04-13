@@ -766,6 +766,7 @@ export const upsertVendorCompanyInfo = async (req, res) => {
       message: "Company details saved successfully",
       data: companyData,
     });
+    
   } catch (e) {
     return res.status(500).json({
       success: false,

@@ -31,7 +31,7 @@ export const createShipment = async (req, res) => {
     const payload = {
       order_id: order._id,
       order_date: new Date(),
-       billing_customer_name: `${order.userId.firstName} ${order.userId.lastName}`,
+      billing_customer_name: `${order.userId.firstName} ${order.userId.lastName}`,
       billing_phone: order.userId.phone,
       billing_address: order.shippingAddress?.address,
       billing_city: order.shippingAddress?.city,
@@ -72,7 +72,7 @@ export const createShipment = async (req, res) => {
       updatedBy: "SYSTEM",
     });
 
-    res.json({h
+    res.json({
       success: true,
       message: "Shipment created successfully",
       data: {

@@ -113,3 +113,30 @@ export const toggleCategory = catchAsync(async (req, res) => {
       ),
     );
 });
+
+//asgr
+export const getByPcategoryId = catchAsync(async (req, res) => {
+  const { pcategoryId } = req.params;
+
+  const cacheKey = `${CACHE_PREFIX}pcategory:${pcategoryId}:${JSON.stringify(req.query)}`;
+
+  const cached = await RedisCache.get(cacheKey);
+  if (cached) {
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          cached,
+          "Categories fetched successfully (cached)",
+        ),
+      );
+  }
+
+  const result = await categoryService.getByPcategoryId(pcategoryId, req.query);
+  await RedisCache.set(cacheKey, result, CACHE_TTL);
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, result, "Categories fetched successfully"));
+});

@@ -3,18 +3,6 @@ import slugify from "slugify";
 
 const subCategorySchema = new mongoose.Schema(
   {
-    // moduleId: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "PlatformModule",
-    //   required: [true, "Module ID is required"],
-    //   index: true,
-    // },
-    pcategoryId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Pcategory",
-      required: [true, "Parent Category ID is required"],
-      index: true,
-    },
     categoryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",

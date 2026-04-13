@@ -317,6 +317,8 @@ class ProductController {
                 Type: 1,
                 mrp: 1,
                 discount: 1,
+                packageDimensions: 1,
+                packageWeight: 1,
               },
             },
           ],
@@ -550,123 +552,6 @@ class ProductController {
       next(error);
     }
   }
-
-  //  CREATE PRODUCT
-
-  //  static async createProduct(req, res, next) {
-  //   const session = await mongoose.startSession();
-  //   session.startTransaction();
-
-  //   try {
-  //     // UPDATED — PARSE multipart JSON
-  //     let { productData, variants } = req.body;
-
-  //     if (typeof productData === "string") {
-  //       productData = JSON.parse(productData);
-  //     }
-
-  //     if (typeof variants === "string") {
-  //       variants = JSON.parse(variants);
-  //     }
-
-  //     //  UPDATED — VALIDATION
-  //     if (!Array.isArray(variants) || variants.length === 0) {
-  //       throw new APIError("At least one variant is required", 400);
-  //     }
-
-  //     // HANDLE FILES
-
-  //     const uploadedImages =
-  //       req.files?.images?.map((f) => f.location) || [];
-
-  //     const uploadedThumbnail =
-  //       req.files?.thumbnail?.[0]?.location || null;
-
-  //     if (uploadedImages.length) {
-  //       productData.images = uploadedImages;
-  //     }
-
-  //     if (uploadedThumbnail) {
-  //       productData.thumbnail = uploadedThumbnail;
-  //     }
-
-  //     // CREATE PRODUCT
-
-  //     const productArr = await Product.create(
-  //       [
-  //         {
-  //           ...productData,
-  //           createdBy: req.user?.id,
-  //         },
-  //       ],
-  //       { session }
-  //     );
-
-  //     const product = productArr[0];
-
-  //     //  UPDATED — SECURITY CLEANUP
-  //     const forbiddenFields = [
-  //       "productId",
-  //       "moduleId",
-  //       "pcategoryId",
-  //       "categoryId",
-  //       "subcategoryId",
-  //       "brandId",
-  //     ];
-
-  //     variants = variants.map((v) => {
-  //       forbiddenFields.forEach((field) => delete v[field]);
-  //       return v;
-  //     });
-
-  //     // PREPARE VARIANTS (AUTO INJECT)
-
-  //     const preparedVariants = variants.map((variant) => ({
-  //       ...variant,
-
-  //       //  AUTO INJECT (IMPORTANT)
-  //       productId: product._id,
-  //       moduleId: product.moduleId,
-  //       pcategoryId: product.pcategoryId,
-  //       categoryId: product.categoryId,
-  //       subcategoryId: product.subcategoryId,
-  //       brandId: product.brandId,
-
-  //       createdBy: req.user?.id,
-  //     }));
-
-  //     // BULK CREATE VARIANTS
-
-  //     const createdVariants = await Variant.insertMany(preparedVariants, {
-  //       session,
-  //     });
-
-  //     // SET DEFAULT VARIANT
-
-  //     product.defaultVariantId = createdVariants[0]._id;
-  //     await product.save({ session });
-
-  //     await session.commitTransaction();
-  //     session.endSession();
-
-  //     //  UPDATED — BETTER CACHE CLEAR
-  //     await RedisCache.deletePattern?.("products:*");
-  //     await RedisCache.delete?.("products:");
-
-  //     res.status(201).json({
-  //       status: "success",
-  //       message: "Product created with variants",
-  //       data: {
-  //         product,
-  //         variants: createdVariants,
-  //       },
-  //     });
-  //   } catch (err) {
-  //     await session.abortTransaction();
-  //     session.endSession();
-  //     next(err);
-  //   }
-  // }
 
   static async createProduct(req, res, next) {
     const session = await mongoose.startSession();

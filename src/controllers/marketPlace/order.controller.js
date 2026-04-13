@@ -1367,164 +1367,373 @@ export const updateOrderToDelivered = async (req, res, next) => {
   }
 };
 
-//asgr
-// deliveryController.js
-// const deliveryOptions = [
-//   { name: "self_delivery", description: "Self Delivery" },
-//   { name: "vendor_delivery", description: "Vendor Delivery" },
-//   { name: "logistic_delivery", description: "Logistic Delivery" },
-// ];
-// export const getDeliveryOptions = (req, res) => {
-//   res.status(200).json({
-//     success: true,
-//     data: deliveryOptions,
-//   });
-// };
+import addressModel from "../../models/user/address.model.js";
+import { getDistanceInKm } from "../../utils/getDistanceInKm.js";
 
-const deliveryOptions = {
-  SELF: { name: "self_delivery", description: "Self Delivery" },
-  VENDOR: { name: "vendor_delivery", description: "Vendor Delivery" },
-  LOGISTIC: { name: "logistic_delivery", description: "Logistic Delivery" },
-};
-
-export const getDeliveryOptions = (req, res) => {
+export const checkoutPreview = async (req, res) => {
   try {
-    const { cartItems } = req.body;
-    if (!cartItems || cartItems.length === 0) {
+    const userId = req.user.id;
+    const { addressId } = req.body;
+
+    const cart = await Cart.findOne({ userId }).populate("items.product");
+    if (!cart || cart.items.length === 0) {
+      return res.status(400).json({ message: "Cart is empty" });
+    }
+    const address = await addressModel.findById(addressId);
+    if (!address) {
+      return res.status(404).json({ message: "Address not found" });
+    }
+    const userPincode = address.pincode;
+
+    const grouped = {};
+    for (let item of cart.items) {
+      const vendorId = item.product.vendorId.toString();
+      if (!grouped[vendorId]) grouped[vendorId] = [];
+      grouped[vendorId].push(item);
+    }
+    const result = [];
+
+    for (let vendorId in grouped) {
+      const vendor = await VendorCompany.findById(vendorId);
+      const isServiceable = vendor.serviceArea?.pinCodes?.includes(userPincode);
+      let options = ["SELF", "LOGISTIC"];
+
+      if (isServiceable) {
+        options.push("VENDOR");
+      }
+
+      result.push({
+        vendorId,
+        items: grouped[vendorId],
+        availableDeliveryOptions: options,
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+// //response -
+// [
+//   {
+//     "vendorId": "A",
+//     "availableDeliveryOptions": ["SELF", "LOGISTIC", "VENDOR"]
+//   },
+//   {
+//     "vendorId": "B",
+//     "availableDeliveryOptions": ["SELF", "LOGISTIC"]
+//   }
+// ]
+
+//calculate deliveryfee frontend input
+//{
+//   "addressId": "123",
+//   "vendors": [
+//     { "vendorId": "A", "deliveryType": "LOGISTIC" },
+//     { "vendorId": "B", "deliveryType": "SELF" }
+//   ]
+// }
+
+export const calculateDelivery = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { addressId, vendors } = req.body;
+
+    if (!vendors || vendors.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No delivery selection provided",
+      });
+    }
+
+    const cart = await Cart.findOne({ userId }).populate("items.product");
+    if (!cart || cart.items.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Cart is empty",
       });
     }
-    // Get unique vendors
-    const vendorIds = new Set(cartItems.map((item) => item.vendorId));
 
-    let availableOptions = [];
-    if (vendorIds.size === 1) {
-      availableOptions = [
-        deliveryOptions.SELF,
-        deliveryOptions.VENDOR,
-        deliveryOptions.LOGISTIC,
-      ];
-    } else {
-      availableOptions = [deliveryOptions.SELF, deliveryOptions.LOGISTIC];
+    const address = await addressModel.findById(addressId);
+    if (!address) {
+      return res.status(404).json({
+        success: false,
+        message: "Address not found",
+      });
     }
 
-    return res.status(200).json({
-      success: true,
-      data: availableOptions,
+    const userPincode = Number(address.pincode);
+    const grouped = {};
+    for (let item of cart.items) {
+      const vendorId = item.product.vendorId.toString();
+      if (!grouped[vendorId]) grouped[vendorId] = [];
+      grouped[vendorId].push(item);
+    }
+
+    const vendorIds = vendors.map((v) => v.vendorId);
+    const vendorDocs = await VendorCompany.find({
+      _id: { $in: vendorIds },
     });
-  } catch (error) {
+
+    const vendorMap = {};
+    vendorDocs.forEach((v) => {
+      vendorMap[v._id.toString()] = v;
+    });
+
+    // 6. calculate cost
+    let totalDeliveryCost = 0;
+    const breakdown = [];
+
+    for (let v of vendors) {
+      const { vendorId, deliveryType } = v;
+
+      if (!grouped[vendorId]) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid vendor ${vendorId}`,
+        });
+      }
+
+      const vendor = vendorMap[vendorId];
+
+      const isServiceable =
+        vendor?.serviceArea?.pinCodes?.includes(userPincode);
+
+      let allowedOptions = ["SELF", "LOGISTIC"];
+      if (isServiceable) {
+        allowedOptions.push("VENDOR");
+      }
+
+      if (!allowedOptions.includes(deliveryType)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid deliveryType for vendor ${vendorId}`,
+        });
+      }
+
+      const distance = getDistanceInKm(
+        address.location.coordinates[1],
+        address.location.coordinates[0],
+        vendor.location.coordinates[1],
+        vendor.location.coordinates[0],
+      );
+
+      let deliveryCost = 0;
+
+      if (deliveryType === "SELF") {
+        deliveryCost = 0;
+      }
+
+      if (deliveryType === "VENDOR") {
+        deliveryCost = 50 + grouped[vendorId].length * 10;
+      }
+
+      if (deliveryType === "LOGISTIC") {
+        const base = 40;
+        const perKm = 6;
+        const perItem = 10;
+
+        deliveryCost =
+          base + distance * perKm + grouped[vendorId].length * perItem;
+      }
+
+      totalDeliveryCost += deliveryCost;
+
+      breakdown.push({
+        vendorId,
+        deliveryType,
+        distance: Number(distance.toFixed(2)),
+        items: grouped[vendorId].length,
+        cost: deliveryCost,
+      });
+    }
+
+    return res.json({
+      success: true,
+      totalDeliveryCost,
+      breakdown,
+    });
+  } catch (err) {
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: err.message,
     });
   }
 };
 
-export const getDeliveryCost = ({
-  deliveryMethod,
-  items = [],
-  distance = 0, // in KM (for logistics)
-  vendorDeliveryCharge = 0, // optional (vendor can set)
-}) => {
-  if (deliveryMethod === "self_delivery") {
-    return {
-      deliveryCost: 0,
-      breakdown: "Self delivery - no charges",
-    };
-  }
+// {
+//   "success": true,
+//   "totalDeliveryCost": 180,
+//   "breakdown": [
+//     {
+//       "vendorId": "A",
+//       "deliveryType": "LOGISTIC",
+//       "distance": 5.2,
+//       "items": 2,
+//       "cost": 120
+//     },
+//     {
+//       "vendorId": "B",
+//       "deliveryType": "SELF",
+//       "distance": 2.1,
+//       "items": 1,
+//       "cost": 0
+//     }
+//   ]
+// }
+export const getOrderSummary = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { addressId, vendors } = req.body;
 
-  const totalItems = items.reduce((acc, item) => acc + (item.quantity || 1), 0);
+    // 1. cart fetch
+    const cart = await Cart.findOne({ userId }).populate("items.product");
+    if (!cart || cart.items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Cart is empty",
+      });
+    }
 
-  const baseCost = 50;
-  const perItemCost = 10;
+    // 2. address
+    const address = await addressModel.findById(addressId);
+    if (!address) {
+      return res.status(404).json({
+        success: false,
+        message: "Address not found",
+      });
+    }
 
-  if (deliveryMethod === "vendor_delivery") {
-    const cost =
-      vendorDeliveryCharge > 0
-        ? vendorDeliveryCharge
-        : baseCost + totalItems * perItemCost;
+    const userPincode = Number(address.pincode);
 
-    return {
-      deliveryCost: cost,
-      breakdown: `Vendor delivery (items: ${totalItems})`,
-    };
-  }
+    // 3. group items vendor-wise
+    const grouped = {};
+    let totalAmount = 0;
 
-  if (deliveryMethod === "logistic_delivery") {
-    const perKmCost = 8;
+    for (let item of cart.items) {
+      const vendorId = item.product.vendorId.toString();
 
-    const distanceCost = distance * perKmCost;
-    const itemCost = totalItems * perItemCost;
+      if (!grouped[vendorId]) grouped[vendorId] = [];
 
-    const totalCost = baseCost + itemCost + distanceCost;
+      grouped[vendorId].push(item);
 
-    return {
-      deliveryCost: totalCost,
-      breakdown: `Logistics (items: ${totalItems}, distance: ${distance}km)`,
-    };
-  }
+      // 🧾 product total
+      totalAmount += item.price * item.quantity;
+    }
 
-  return {
-    deliveryCost: 0,
-    breakdown: "Invalid delivery method",
-  };
-};
+    // 4. vendor fetch
+    const vendorIds = vendors.map((v) => v.vendorId);
+    const vendorDocs = await VendorCompany.find({
+      _id: { $in: vendorIds },
+    });
 
-//call method in order creation flow (e.g., in createOrder controller) and save cost + breakdown in order document for future reference
-// const { deliveryCost, breakdown } = getDeliveryCost({
-//   deliveryMethod: order.deliveryMethod,
-//   items: order.items,
-//   distance: order.distance,
-//   vendorDeliveryCharge: order.vendorCharge,
-// });
-// order.deliveryCost = deliveryCost;
-// order.deliveryBreakdown = breakdown;
+    const vendorMap = {};
+    vendorDocs.forEach((v) => {
+      vendorMap[v._id.toString()] = v;
+    });
 
-export const calculateOrderDelivery = (vendorsData) => {
-  let totalDeliveryCost = 0;
-  const breakdown = [];
+    // 5. delivery calculation
+    let totalDeliveryCost = 0;
+    const deliveryBreakdown = [];
 
-  for (const vendorId in vendorsData) {
-    const { items, distance } = vendorsData[vendorId];
+    for (let v of vendors) {
+      const { vendorId, deliveryType } = v;
 
-    const totalWeight = items.reduce(
-      (acc, item) => acc + item.weight * (item.quantity || 1),
-      0,
-    );
+      const vendor = vendorMap[vendorId];
 
-    const volumetricWeight = items.reduce((acc, item) => {
-      const volume = (item.length * item.width * item.height) / 5000;
-      return acc + volume * (item.quantity || 1);
-    }, 0);
+      const isServiceable =
+        vendor?.serviceArea?.pinCodes?.includes(userPincode);
 
-    const chargeableWeight = Math.max(totalWeight, volumetricWeight);
+      let allowedOptions = ["SELF", "LOGISTIC"];
+      if (isServiceable) allowedOptions.push("VENDOR");
 
-    const baseCost = 40;
-    const perKmRate = 6;
-    const perKgRate = 12;
+      if (!allowedOptions.includes(deliveryType)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid deliveryType for vendor ${vendorId}`,
+        });
+      }
 
-    const cost = baseCost + distance * perKmRate + chargeableWeight * perKgRate;
+      // distance
+      const distance = getDistanceInKm(
+        address.location.coordinates[1],
+        address.location.coordinates[0],
+        vendor.location.coordinates[1],
+        vendor.location.coordinates[0],
+      );
 
-    totalDeliveryCost += cost;
+      let cost = 0;
 
-    breakdown.push({
-      vendorId,
-      cost,
-      distance,
-      chargeableWeight,
+      if (deliveryType === "SELF") cost = 0;
+
+      if (deliveryType === "VENDOR") {
+        cost = 50 + grouped[vendorId].length * 10;
+      }
+
+      if (deliveryType === "LOGISTIC") {
+        cost = 40 + distance * 6 + grouped[vendorId].length * 10;
+      }
+
+      totalDeliveryCost += cost;
+
+      deliveryBreakdown.push({
+        vendorId,
+        deliveryType,
+        distance: Number(distance.toFixed(2)),
+        items: grouped[vendorId].length,
+        cost,
+      });
+    }
+
+    // 6. FINAL BILL
+    const grandTotal = totalAmount + totalDeliveryCost;
+
+    return res.json({
+      success: true,
+      bill: {
+        itemsTotal: totalAmount,
+        deliveryTotal: totalDeliveryCost,
+        grandTotal,
+      },
+      deliveryBreakdown,
+      totalItems: cart.items.length,
+      address,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message,
     });
   }
-
-  return {
-    totalDeliveryCost,
-    breakdown,
-  };
 };
-
-// const vendorsData = {
-//   vendor1: { items: [...], distance: 5 },
-//   vendor2: { items: [...], distance: 10 },
-// };
-// const deliveryResult = calculateOrderDelivery(vendorsData);
+//response -
+// {
+//   "success": true,
+//   "bill": {
+//     "itemsTotal": 1200,
+//     "deliveryTotal": 180,
+//     "grandTotal": 1380
+//   },
+//   "deliveryBreakdown": [
+//     {
+//       "vendorId": "A",
+//       "deliveryType": "LOGISTIC",
+//       "distance": 5.2,
+//       "items": 2,
+//       "cost": 120
+//     },
+//     {
+//       "vendorId": "B",
+//       "deliveryType": "SELF",
+//       "distance": 2.1,
+//       "items": 1,
+//       "cost": 0
+//     }
+//   ],
+//   "totalItems": 3,
+//   "address": { ... }
+// }

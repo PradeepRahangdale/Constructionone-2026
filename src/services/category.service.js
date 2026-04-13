@@ -86,6 +86,57 @@ export const getAll = async (query) => {
   };
 };
 
+export const getByPcategoryId = async (pcategoryId, query) => {
+  const page = parseInt(query.page) || 1;
+  const limit = parseInt(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const { search, isActive, sort } = query;
+
+  const matchStage = {
+    pcategoryId: new mongoose.Types.ObjectId(pcategoryId), // 👈 fixed
+  };
+
+  if (search) {
+    matchStage.name = { $regex: search, $options: "i" };
+  }
+
+  if (isActive === "true") matchStage.isActive = true;
+  if (isActive === "false") matchStage.isActive = false;
+
+  const sortStage = {};
+  if (sort) {
+    const [field, order] = sort.split(":");
+    sortStage[field] = order === "desc" ? -1 : 1;
+  } else {
+    sortStage.order = 1;
+    sortStage.createdAt = -1;
+  }
+
+  const result = await Category.aggregate([
+    { $match: matchStage },
+    { $sort: sortStage },
+    {
+      $facet: {
+        metadata: [{ $count: "total" }],
+        data: [{ $skip: skip }, { $limit: limit }],
+      },
+    },
+  ]);
+
+  const data = result[0].data;
+  const total = result[0].metadata[0]?.total || 0;
+
+  return {
+    data,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+};
 export const getById = async (id) => {
   const category = await Category.findById(id)
     .populate("moduleId", "title")
@@ -189,6 +240,184 @@ export const getCategoryTreeService = async () => {
         _id: 1,
         moduleId: 1,
         order: 1,
+      },
+    },
+  ];
+
+  return await Pcategory.aggregate(pipeline);
+};
+
+//old
+// export const getCategoryTreeServiceForAdmin = async (query) => {
+//   const { isActive } = query;
+
+//   // ✅ separate filters
+//   const pcategoryMatch = {};
+//   const categoryMatch = {};
+//   const subCategoryMatch = {};
+
+//   if (isActive === "true") {
+//     pcategoryMatch.isActive = true;
+//     categoryMatch.isActive = true;
+//     subCategoryMatch.isActive = true;
+//   }
+
+//   if (isActive === "false") {
+//     pcategoryMatch.isActive = false;
+//     categoryMatch.isActive = false;
+//     subCategoryMatch.isActive = false;
+//   }
+
+//   const pipeline = [
+//     { $match: pcategoryMatch },
+//     { $sort: { order: 1 } },
+//     {
+//       $lookup: {
+//         from: "categories",
+//         localField: "_id",
+//         foreignField: "pcategoryId",
+//         as: "categories",
+//         pipeline: [
+//           { $match: categoryMatch }, // 👈 FIX
+//           { $sort: { order: 1 } },
+//           {
+//             $lookup: {
+//               from: "subcategories",
+//               localField: "_id",
+//               foreignField: "categoryId",
+//               as: "subCategories",
+//               pipeline: [
+//                 { $match: subCategoryMatch },
+//                 { $sort: { order: 1 } },
+//                 {
+//                   $project: {
+//                     name: 1,
+//                     slug: 1,
+//                     image: 1,
+//                     _id: 1,
+//                     order: 1,
+//                     isActive: 1,
+//                   },
+//                 },
+//               ],
+//             },
+//           },
+//           {
+//             $project: {
+//               name: 1,
+//               slug: 1,
+//               image: 1,
+//               subCategories: 1,
+//               _id: 1,
+//               order: 1,
+//               isActive: 1,
+//             },
+//           },
+//         ],
+//       },
+//     },
+//     {
+//       $project: {
+//         name: 1,
+//         slug: 1,
+//         image: 1,
+//         categories: 1,
+//         _id: 1,
+//         moduleId: 1,
+//         order: 1,
+//         isActive: 1,
+//       },
+//     },
+//   ];
+
+//   return await Pcategory.aggregate(pipeline);
+// };
+
+
+export const getCategoryTreeServiceForAdmin = async (query) => {
+  const { isActive } = query;
+
+  const pcategoryMatch = {};
+  const categoryMatch = {};
+  const subCategoryMatch = {};
+
+  if (isActive === "true") {
+    pcategoryMatch.isActive = true;
+    categoryMatch.isActive = true;
+    subCategoryMatch.isActive = true;
+  } else if (isActive === "false") {
+    pcategoryMatch.isActive = false;
+    categoryMatch.isActive = false;
+    subCategoryMatch.isActive = false;
+  }
+
+  const pipeline = [
+    { $match: pcategoryMatch },
+    { $sort: { order: 1 } },
+
+    {
+      $lookup: {
+        from: "categories",
+        localField: "_id",
+        foreignField: "pcategoryId",
+        as: "categories",
+        pipeline: [
+          { $match: categoryMatch },
+          { $sort: { order: 1 } },
+
+          // 🔹 SubCategories
+          {
+            $lookup: {
+              from: "subcategories",
+              localField: "_id",
+              foreignField: "categoryId",
+              as: "subCategories",
+              pipeline: [
+                { $match: subCategoryMatch },
+                { $sort: { order: 1 } },
+                {
+                  $project: {
+                    _id: 1,
+                    name: 1,
+                    slug: 1,
+                    image: 1,
+                    order: 1,
+                    isActive: 1,
+                    categoryId: 1, 
+                  },
+                },
+              ],
+            },
+          },
+
+          // 🔹 Category Projection
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              slug: 1,
+              image: 1,
+              order: 1,
+              isActive: 1,
+              pcategoryId: 1, 
+              subCategories: 1,
+            },
+          },
+        ],
+      },
+    },
+
+    // 🔹 Parent Category Projection
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        slug: 1,
+        image: 1,
+        moduleId: 1,
+        order: 1,
+        isActive: 1,
+        categories: 1,
       },
     },
   ];

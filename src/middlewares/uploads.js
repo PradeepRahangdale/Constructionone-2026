@@ -81,6 +81,7 @@ export const deleteFromS3 = async (key) => {
     });
 
     await s3.send(command);
+
     // console.log("✅ S3 file deleted:", key);
   } catch (err) {
     // console.error("❌ S3 delete error:", err.message);

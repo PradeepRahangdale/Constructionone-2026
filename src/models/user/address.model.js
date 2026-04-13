@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 const addressSchema = new mongoose.Schema(
   {
@@ -26,6 +25,7 @@ const addressSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    pincode: String,
   },
   { timestamps: true },
 );

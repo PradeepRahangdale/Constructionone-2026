@@ -1,16 +1,10 @@
 import SubCategory from "../models/category/subCategory.model.js";
 import Category from "../models/category/category.model.js";
-import Pcategory from "../models/category/pcategory.model.js";
 import mongoose from "mongoose";
 import { APIError } from "../middlewares/errorHandler.js";
 
 export const create = async (data, userId) => {
-  const { pcategoryId, categoryId, name } = data;
-
-  // Validate Parent and Category exist
-  const parent = await Pcategory.findById(pcategoryId);
-  if (!parent) throw new APIError(404, "Parent Category not found");
-
+  const { categoryId, name } = data;
   const category = await Category.findById(categoryId);
   if (!category) throw new APIError(404, "Category not found");
 

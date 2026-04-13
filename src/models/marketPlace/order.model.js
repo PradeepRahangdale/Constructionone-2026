@@ -134,6 +134,19 @@ const orderSchema = new mongoose.Schema(
     },
     deliveredDate: Date,
 
+    deliveryType: {
+      type: String,
+      enum: ["SELF", "VENDOR", "LOGISTIC"],
+      required: function () {
+        return this.orderType === "SUB";
+      },
+    },
+
+    deliveryCharge: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     //asgr
     awbCode: {
       type: String,
