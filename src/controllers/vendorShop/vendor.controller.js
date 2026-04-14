@@ -766,7 +766,6 @@ export const upsertVendorCompanyInfo = async (req, res) => {
       message: "Company details saved successfully",
       data: companyData,
     });
-    
   } catch (e) {
     return res.status(500).json({
       success: false,
@@ -847,7 +846,6 @@ export const upsertVendorCompanyInfo = async (req, res) => {
 //   }
 // };
 //update Shop details
-
 export const updateUpsertVendorCompanyInfo = async (req, res) => {
   try {
     const vendorId = req.user.id;
@@ -995,7 +993,28 @@ export const getAllVendors = async (req, res) => {
         limit,
         totalPages: Math.ceil(total / limit),
       },
-      data: vendors,
+      data: vendors.map((v) => ({
+        _id: v._id,
+        shopName: v.companyName, // ye hi shop name hai
+        companyType: v.companyType,
+        badges: v.badges || [],
+        totalReviews: v.vendorId?.totalReviews || 0,
+        businessCategory: v.businessCategory,
+        vendor: {
+          _id: v.vendorId?._id,
+          name: `${v.vendorId?.firstName || ""} ${v.vendorId?.lastName || ""}`,
+          email: v.vendorId?.email,
+          phoneNumber: v.vendorId?.phoneNumber,
+          isAdminVerified: v.vendorId?.isAdminVerified,
+          isDisabled: v.vendorId?.disable,
+        },
+
+        location: {
+          address: v.businessAddress?.address,
+        },
+
+        createdAt: v.createdAt,
+      })),
     };
     await RedisCache.set(cacheKey, response);
     return res.status(200).json({
@@ -1016,41 +1035,103 @@ export const getAllVendors = async (req, res) => {
     });
   }
 };
-export const getVendorById = async (req, res) => {
+// export const getVendorById = async (req, res) => {
+//   try {
+//     const { vendorId } = req.params;
+
+//     const cacheKey = `vendor:id:v1:${vendorId}`;
+//     const cached = await RedisCache.get(cacheKey);
+//     if (cached) return res.status(200).json(cached);
+
+//     const vendor = await VendorCompany.findOne({ vendorId })
+//       .populate({
+//         path: "vendorId",
+//         select: "-password -phoneOtp -aadharOtp -__v",
+//       })
+//       .lean();
+
+//     if (!vendor) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Vendor not found",
+//       });
+//     }
+//     const response = { success: true, data: vendor };
+//     await RedisCache.set(cacheKey, response);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: vendor,
+//     });
+//   } catch (error) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Invalid vendor ID",
+//     });
+//   }
+// };
+
+//list of unverified vendors for admin
+export const getUnverifiedVendors = async (req, res, next) => {
   try {
-    const { vendorId } = req.params;
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const skip = (page - 1) * limit;
+    const { search } = req.query;
 
-    const cacheKey = `vendor:id:v1:${vendorId}`;
-    const cached = await RedisCache.get(cacheKey);
-    if (cached) return res.status(200).json(cached);
+    const filter = {
+      isAdminVerified: false,
+    };
 
-    const vendor = await VendorCompany.findOne({ vendorId })
-      .populate({
-        path: "vendorId",
-        select: "-password -phoneOtp -aadharOtp -__v",
-      })
-      .lean();
-
-    if (!vendor) {
-      return res.status(404).json({
-        success: false,
-        message: "Vendor not found",
-      });
+    if (search) {
+      filter.$or = [
+        { shopName: { $regex: search, $options: "i" } },
+        { ownerName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
     }
-    const response = { success: true, data: vendor };
-    await RedisCache.set(cacheKey, response);
 
-    return res.status(200).json({
+    const [vendors, total] = await Promise.all([
+      VendorProfile.find(filter)
+        .skip(skip)
+        .limit(limit)
+        .sort({ createdAt: -1 }),
+
+      VendorProfile.countDocuments(filter),
+    ]);
+
+    const formattedVendors = vendors.map((v) => ({
+      vendorId: v._id,
+      name: `${v.firstName} ${v.lastName}`,
+      email: v.email,
+      phoneNumber: v.phoneNumber,
+      isAdminVerified: v.isAdminVerified,
+      isAadharVerified: v.isAadharVerified,
+      isProfileCompleted: v.isProfileCompleted,
+      isActive: !v.disable,
+
+      createdAt: v.createdAt,
+    }));
+
+    const response = {
       success: true,
-      data: vendor,
-    });
+      message: "Unverified vendors fetched successfully",
+      data: formattedVendors,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+
+    return res.status(200).json(response);
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid vendor ID",
-    });
+    next(APIError(500, error.message));
   }
 };
+
+//admin verify vendor
 export const verifyVendorByAdmin = async (req, res, next) => {
   try {
     const { vendorId } = req.params;
@@ -1080,7 +1161,13 @@ export const verifyVendorByAdmin = async (req, res, next) => {
     // Update admin verification
     vendor.isAdminVerified = true;
     await vendor.save();
-    await RedisCache.delete(`vendor:v1:${vendorId}:*`);
+    // await RedisCache.delete(`vendor:v1:${vendorId}:*`);
+    await Promise.all([
+      RedisCache.delete(`vendor:v1:${vendorId}:*`),
+      RedisCache.delete(`vendor:${vendorId}`), // single vendor
+      RedisCache.delete(`vendor:id:v1:${vendorId}`), // vendor detail cache
+      RedisCache.deletePattern("vendors:all:v1:*"), // all list caches
+    ]);
     return res.status(200).json({
       success: true,
       message: "Vendor admin verified successfully",
@@ -1093,6 +1180,7 @@ export const verifyVendorByAdmin = async (req, res, next) => {
     next(APIError(500, error.message));
   }
 };
+
 export const addMultipleBadgesByAdmin = async (req, res, next) => {
   try {
     const { vendorId } = req.params;
@@ -1120,7 +1208,12 @@ export const addMultipleBadgesByAdmin = async (req, res, next) => {
         message: "Vendor not found",
       });
     }
-    await RedisCache.delete(`vendor:id:v1:${vendorId}`);
+
+    await Promise.all([
+      RedisCache.delete(`vendor:${vendorId}`), // single vendor
+      RedisCache.delete(`vendor:id:v1:${vendorId}`), // vendor detail cache
+      RedisCache.deletePattern("vendors:all:v1:*"), // all list caches
+    ]);
     return res.status(200).json({
       success: true,
       message: "Badges added successfully",
@@ -1158,7 +1251,14 @@ export const removeMultipleBadgesByAdmin = async (req, res, next) => {
         message: "Vendor not found",
       });
     }
-    await RedisCache.delete(`vendor:id:v1:${vendorId}`);
+    // await RedisCache.delete(`vendor:id:v1:${vendorId}`);
+    // await RedisCache.delete("vendors:all:v1:*");
+    // await RedisCache.deletePattern("vendors:all:v1:*");
+    await Promise.all([
+      RedisCache.delete(`vendor:${vendorId}`), // single vendor
+      RedisCache.delete(`vendor:id:v1:${vendorId}`), // vendor detail cache
+      RedisCache.deletePattern("vendors:all:v1:*"), // all list caches
+    ]);
     return res.status(200).json({
       success: true,
       message: "Badges removed successfully",
@@ -1182,7 +1282,15 @@ export const disableVendorStatus = async (req, res, next) => {
     }
     vendor.disable = !vendor.disable;
     await vendor.save();
+    // await RedisCache.delete(`vendor:id:v1:${vendorId}`);
+    // await RedisCache.delete("vendors:all:v1:*");
+    // await RedisCache.deletePattern("vendors:all:v1:*");
 
+    await Promise.all([
+      RedisCache.delete(`vendor:${vendorId}`), // single vendor
+      RedisCache.delete(`vendor:id:v1:${vendorId}`), // vendor detail cache
+      RedisCache.deletePattern("vendors:all:v1:*"), // all list caches
+    ]);
     return res.status(200).json({
       success: true,
       message: `Vendor status disable ${vendor.disable ? "true" : "false"}`,
@@ -1298,6 +1406,259 @@ export const refreshTokenHandler = async (req, res) => {
   }
 };
 
+// import VendorCompany from "../../models/vendor/vendorCompany.model.js";
+import Product from "../../models/vendorShop/product.model.js";
+import Order from "../../models/marketPlace/order.model.js";
+import VendorWallet from "../../models/vendorShop/vendorWallet.model.js";
+
+//without top product array
+// export const getVendorById = async (req, res) => {
+//   try {
+//     const { vendorId } = req.params;
+
+//     const cacheKey = `vendor:id:v4:${vendorId}`; // version updated
+//     const cached = await RedisCache.get(cacheKey);
+//     if (cached) return res.status(200).json(cached);
+
+//     // Vendor Info
+//     const vendor = await VendorCompany.findOne({ vendorId })
+//       .populate({
+//         path: "vendorId",
+//         select: "-password -phoneOtp -aadharOtp -__v",
+//       })
+//       .lean();
+
+//     if (!vendor) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Vendor not found",
+//       });
+//     }
+
+//     // 🚀 Parallel execution
+//     const [totalProducts, orderStats, wallet, topProducts] = await Promise.all([
+//       //  Total Products
+//       Product.countDocuments({ vendorId }),
+
+//       // Order Stats
+//       Order.aggregate([
+//         { $match: { vendorId } },
+//         {
+//           $group: {
+//             _id: "$orderStatus",
+//             count: { $sum: 1 },
+//           },
+//         },
+//       ]),
+
+//       // Wallet
+//       VendorWallet.findOne({ vendorId }).lean(),
+
+//       // Top 10 Products (Most Ordered)
+//       Order.aggregate([
+//         { $match: { vendorId } },
+//         { $unwind: "$products" },
+//         {
+//           $group: {
+//             _id: "$products.productId",
+//             totalOrders: { $sum: "$products.quantity" }, // quantity based (best)
+//           },
+//         },
+//         { $sort: { totalOrders: -1 } },
+//         { $limit: 10 },
+//         {
+//           $lookup: {
+//             from: "products", // check collection name
+//             localField: "_id",
+//             foreignField: "_id",
+//             as: "productDetails",
+//           },
+//         },
+//         { $unwind: "$productDetails" },
+//         {
+//           $project: {
+//             _id: 0,
+//             productId: "$_id",
+//             totalOrders: 1,
+//             name: "$productDetails.name",
+//             price: "$productDetails.price",
+//             images: "$productDetails.images",
+//           },
+//         },
+//       ]),
+//     ]);
+
+//     // ✅ Format Order Stats
+//     let completedOrders = 0;
+//     let pendingOrders = 0;
+
+//     orderStats.forEach((item) => {
+//       if (item._id === "completed") completedOrders = item.count;
+//       if (item._id === "pending") pendingOrders = item.count;
+//     });
+
+//     // ✅ Analytics Object
+//     const analytics = {
+//       totalProducts,
+//       totalOrders: completedOrders + pendingOrders,
+//       completedOrders,
+//       pendingOrders,
+//       wallet: {
+//         totalBalance: wallet?.totalBalance || 0,
+//         availableBalance: wallet?.availableBalance || 0,
+//         onHoldBalance: wallet?.onHoldBalance || 0,
+//       },
+//     };
+
+//     // ✅ Final Response
+//     const response = {
+//       success: true,
+//       data: {
+//         ...vendor,
+//         analytics,
+//         topProducts, //  only top 10
+//       },
+//     };
+
+//     // ✅ Cache set
+//     await RedisCache.set(cacheKey, response);
+
+//     return res.status(200).json(response);
+//   } catch (error) {
+//     console.error("Get Vendor Error:", error);
+//     return res.status(400).json({
+//       success: false,
+//       message: "Invalid vendor ID",
+//     });
+//   }
+// };
+
+export const getVendorById = async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+
+    const cacheKey = `vendor:id:v1:${vendorId}`;
+    const cached = await RedisCache.get(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const vendor = await VendorCompany.findOne({ vendorId })
+      .populate({
+        path: "vendorId",
+        select: "-password -phoneOtp -aadharOtp -__v",
+      })
+      .lean();
+
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: "Vendor not found",
+      });
+    }
+
+    const [totalProducts, orderStats, wallet] = await Promise.all([
+      Product.countDocuments({ vendorId }),
+
+      Order.aggregate([
+        { $match: { vendorId } },
+        {
+          $group: {
+            _id: "$orderStatus",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+
+      VendorWallet.findOne({ vendorId }).lean(),
+    ]);
+
+    let topProducts = await Order.aggregate([
+      { $match: { vendorId } },
+      { $unwind: "$products" },
+      {
+        $group: {
+          _id: "$products.productId",
+          totalOrders: { $sum: "$products.quantity" },
+        },
+      },
+      { $sort: { totalOrders: -1 } },
+      { $limit: 10 },
+      {
+        $lookup: {
+          from: "products", // confirm collection name
+          localField: "_id",
+          foreignField: "_id",
+          as: "productDetails",
+        },
+      },
+      { $unwind: "$productDetails" },
+      {
+        $project: {
+          _id: 0,
+          productId: "$_id",
+          totalOrders: 1,
+          name: "$productDetails.name",
+          price: "$productDetails.price",
+          images: "$productDetails.images",
+        },
+      },
+    ]);
+
+    if (!topProducts || topProducts.length === 0) {
+      const fallbackProducts = await Product.find({ vendorId })
+        .sort({ createdAt: -1 }) // latest products
+        .limit(2)
+        .select("name price images")
+        .lean();
+
+      topProducts = fallbackProducts.map((p) => ({
+        productId: p._id,
+        name: p.name,
+        price: p.price,
+        images: p.images,
+        totalOrders: 0,
+      }));
+    }
+
+    let completedOrders = 0;
+    let pendingOrders = 0;
+
+    orderStats.forEach((item) => {
+      if (item._id === "completed") completedOrders = item.count;
+      if (item._id === "pending") pendingOrders = item.count;
+    });
+
+    const analytics = {
+      totalProducts,
+      totalOrders: completedOrders + pendingOrders,
+      completedOrders,
+      pendingOrders,
+      wallet: {
+        totalBalance: wallet?.totalBalance || 0,
+        availableBalance: wallet?.availableBalance || 0,
+        onHoldBalance: wallet?.onHoldBalance || 0,
+      },
+    };
+
+    const response = {
+      success: true,
+      data: {
+        ...vendor,
+        analytics,
+        topProducts,
+      },
+    };
+
+    await RedisCache.set(cacheKey, response);
+
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error("Get Vendor Error:", error);
+    return res.status(400).json({
+      success: false,
+      message: "Invalid vendor ID",
+    });
+  }
+};
 //dynamic-otp
 const generateOtp = () => {
   return Number(

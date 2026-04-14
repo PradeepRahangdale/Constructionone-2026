@@ -2,7 +2,6 @@ import State from "../../models/admin/state.model.js"; //Sanvi
 import { APIError } from "../../middlewares/errorHandler.js";
 
 class StateController {
-  // ✅ CREATE
   static async createState(req, res, next) {
     try {
       const state = await State.create(req.body);
@@ -12,7 +11,6 @@ class StateController {
     }
   }
 
-  // ✅ GET ALL (with country filter)
   static async getStates(req, res, next) {
     try {
       const query = {};

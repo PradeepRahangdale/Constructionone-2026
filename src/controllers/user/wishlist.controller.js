@@ -48,10 +48,48 @@ export const addToWishlist = async (req, res, next) => {
     next(error);
   }
 };
+// export const toggleWishlist = async (req, res, next) => {
+//   try {
+//     const userId = req.user.id;
+//     const { productId } = req.body;
+//     let wishlist = await Wishlist.findOne({ userId });
+
+//     if (!wishlist) {
+//       wishlist = new Wishlist({
+//         userId,
+//         products: [],
+//       });
+//     }
+
+//     const index = wishlist.products.findIndex(
+//       (id) => id.toString() === productId,
+//     );
+
+//     let message = "";
+
+//     if (index > -1) {
+//       wishlist.products.splice(index, 1);
+//       message = "Removed from wishlist";
+//     } else {
+//       wishlist.products.push(productId);
+//       message = "Added to wishlist";
+//     }
+
+//     await wishlist.save();
+//     await RedisCache.delete(`wishlist:${userId}`);
+//     res.json({
+//       message,
+//       wishlist,
+//     });
+//   } catch (error) {
+//     next(error);
+//   }
+// };
 export const toggleWishlist = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { productId } = req.body;
+
     let wishlist = await Wishlist.findOne({ userId });
 
     if (!wishlist) {
@@ -76,16 +114,24 @@ export const toggleWishlist = async (req, res, next) => {
     }
 
     await wishlist.save();
+
+    //populate after save
+    wishlist = await wishlist.populate({
+      path: "products",
+      select:
+        "name price thumbnail avgRating reviewCount status vendorId createdAt disable",
+    });
+
     await RedisCache.delete(`wishlist:${userId}`);
+
     res.json({
       message,
-      wishlist,
+      data: wishlist.products, // IMPORTANT
     });
   } catch (error) {
     next(error);
   }
 };
-
 export const getWishlist = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -95,7 +141,13 @@ export const getWishlist = async (req, res, next) => {
       return res.status(200).json({ data: JSON.parse(cached) });
     }
 
-    const wishlist = await Wishlist.findOne({ userId }).populate("products");
+    const wishlist = await Wishlist.findOne({ userId })
+      .populate({
+        path: "products",
+        select:
+          "name price thumbnail avgRating reviewCount status vendorId createdAt disable",
+      })
+      .lean();
 
     await RedisCache.set(
       `wishlist:${userId}`,

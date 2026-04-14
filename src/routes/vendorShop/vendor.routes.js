@@ -13,6 +13,7 @@ import {
   logoutVendor,
   upsertVendorCompanyInfo,
   getAllVendors,
+  getUnverifiedVendors,
   verifyVendorByAdmin,
   disableVendorStatus,
   getVendorById,
@@ -96,6 +97,7 @@ router.put(
 );
 
 // --------------admin api's---------
+router.get("/unverified", adminMiddleware, getUnverifiedVendors);
 router.get("/all", adminMiddleware, getAllVendors); //with pagination and limit and also search - name / email / phoneNumber / disable / varified filter
 router.post("/admin-varify/:vendorId", adminMiddleware, verifyVendorByAdmin); //vendor varification
 router.patch("/:vendorId", adminMiddleware, disableVendorStatus); //eneble and disable vendor profile
