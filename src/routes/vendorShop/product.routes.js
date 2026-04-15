@@ -12,9 +12,24 @@ import { requireAuth } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
 
+router.get(
+  "/draft/products",
+  vendorMiddleware,
+  ProductController.getDraftProducts,
+);
+router.put(
+  "/draft/products/:id",
+  vendorMiddleware,
+  ProductController.updateProductStatus,
+);
 // Base: /v1/material/products
 // GET all products — any authenticated user/admin/vendor
 router.get("/products", authMiddleware, ProductController.getProducts);
+router.get(
+  "/products/admin",
+  adminMiddleware,
+  ProductController.getAllProductsAdmin,
+);
 
 //getProductBySubCategory vendor products
 router.get(
@@ -64,8 +79,8 @@ router.get(
 
 router.patch(
   "/disableProduct/:id",
-  vendorMiddleware,
-  ProductController.disableProduct,
+  adminMiddleware,
+  ProductController.toggleProduct,
 );
 
 // VERIFY product (vendor only) admin
@@ -78,12 +93,12 @@ router.patch(
 // FLASH SALE routes
 router.post(
   "/products/:productId/flash-sale",
-  vendorMiddleware,
+  adminMiddleware,
   ProductController.setFlashSale,
 );
 router.patch(
   "/products/:productId/flash-sale/cancel",
-  vendorMiddleware,
+  adminMiddleware,
   ProductController.cancelFlashSale,
 );
 router.get(

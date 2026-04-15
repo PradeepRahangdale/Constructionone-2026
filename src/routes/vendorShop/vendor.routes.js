@@ -24,6 +24,7 @@ import {
   saveFcmToken,
   getCategoriesByVendorId,
   refreshTokenHandler,
+  getProductsByVendorAndCategory,
 } from "../../controllers/vendorShop/vendor.controller.js";
 import {
   adminMiddleware,
@@ -111,5 +112,6 @@ router.post(
 router.post("/saveFcmToken", vendorMiddleware, saveFcmToken);
 router.post("/refresh-token", refreshTokenHandler);
 router.get("/vendorshop/:vendorId", getCategoriesByVendorId);
+router.get("/vendorshop/:vendorId/:categoryId", getProductsByVendorAndCategory);
 
 export default router;

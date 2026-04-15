@@ -170,7 +170,10 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-
+    verifyReason: {
+      type: String,
+      default: "",
+    },
     metaData: {
       title: { type: String, default: "Product" },
       description: { type: String, default: "Product" },

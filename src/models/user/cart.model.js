@@ -40,8 +40,6 @@ const cartSchema = new mongoose.Schema({
 
 export default mongoose.model("Cart", cartSchema);
 
-
-
 // latest ---->asgr
 // const cartSchema = new mongoose.Schema({
 //   userId: {

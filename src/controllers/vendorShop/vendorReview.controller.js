@@ -6,25 +6,35 @@ import RedisCache from "../../utils/redisCache.js";
 export const addReview = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { vendorId, rating, review } = req.body;
+    const { vendorId, rating, review, type } = req.body;
 
-    if (!vendorId || !rating) {
+    // ✅ validation
+    if (!vendorId || !rating || !type) {
       return res.status(400).json({
         success: false,
-        message: "Vendor ID and rating are required",
+        message: "Vendor ID, rating and type are required",
       });
     }
 
-    // Prevent duplicate review
+    // ✅ type validation (extra safety)
+    if (!["BULK", "RETAIL"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Type must be BULK or RETAIL",
+      });
+    }
+
+    // ✅ Prevent duplicate review (IMPORTANT 🔥)
     const alreadyReviewed = await VendorReview.exists({
       userId,
       vendorId,
+      type,
     });
 
     if (alreadyReviewed) {
       return res.status(409).json({
         success: false,
-        message: "Review already exists. Please update instead.",
+        message: `You already reviewed this vendor for ${type}. Update instead.`,
       });
     }
 
@@ -32,21 +42,27 @@ export const addReview = async (req, res) => {
       ? req.files.images.map((file) => file.location)
       : [];
 
+    // ✅ create review with type
     const newReview = await VendorReview.create({
       userId,
       vendorId,
       rating,
       review,
+      type, // add this
       images,
     });
 
     await updateVendorStats(vendorId);
+
     const populatedReview = await VendorReview.findById(newReview._id).populate(
       "userId",
       "firstName lastName profileImage",
     );
-    await RedisCache.delete(`vendor:v1:${vendorId}`);
-    await RedisCache.deletePattern(`vendor:reviews:v2:${vendorId}:*`);
+
+    await Promise.all([
+      RedisCache.delete(`vendor:v1:${vendorId}`),
+      RedisCache.deletePattern(`vendor:reviews:v2:${vendorId}:*`),
+    ]);
 
     res.status(201).json({
       success: true,
@@ -61,7 +77,7 @@ export const updateReview = async (req, res) => {
   try {
     const userId = req.user.id;
     const { reviewId } = req.params;
-    const { rating, review } = req.body;
+    const { rating, review, type } = req.body;
 
     const existingReview = await VendorReview.findOne({
       _id: reviewId,
@@ -83,7 +99,11 @@ export const updateReview = async (req, res) => {
     if (review !== undefined) {
       existingReview.review = review;
     }
+    if (type !== undefined) {
+      existingReview.type = type;
+    }
     const vendorId = existingReview.vendorId;
+
     // Images optional
     if (req.files?.images?.length) {
       const images = req.files.images.map((file) => file.location);
@@ -153,7 +173,7 @@ export const deleteReview = async (req, res) => {
 };
 export const getVendorReviews = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, type } = req.query;
     const { vendorId } = req.params;
 
     if (!vendorId) {
@@ -163,12 +183,24 @@ export const getVendorReviews = async (req, res) => {
       });
     }
 
-    // Cache key
-    const cacheKey = `vendor:reviews:v2:${vendorId}:page:${page}:limit:${limit}`;
+    // ✅ validate type (optional but recommended)
+    if (type && !["BULK", "RETAIL"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Type must be BULK or RETAIL",
+      });
+    }
+
+    // ✅ dynamic filter
+    const filter = { vendorId };
+    if (type) filter.type = type;
+
+    // ✅ cache key (IMPORTANT 🔥 include type)
+    const cacheKey = `vendor:reviews:v3:${vendorId}:type:${type || "ALL"}:page:${page}:limit:${limit}`;
     const cached = await RedisCache.get(cacheKey);
     if (cached) return res.json(cached);
 
-    // Get vendor stats
+    // ✅ vendor stats (optional: type-wise future me kar sakte ho)
     const vendor = await VendorProfile.findById(vendorId).select(
       "avgRating totalReviews recommendationPercentage ratingBreakdown",
     );
@@ -180,16 +212,18 @@ export const getVendorReviews = async (req, res) => {
       });
     }
 
-    const reviews = await VendorReview.find({ vendorId })
+    // ✅ reviews with filter
+    const reviews = await VendorReview.find(filter)
       .populate("userId", "firstName lastName profileImage")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
 
-    const total = await VendorReview.countDocuments({ vendorId });
+    const total = await VendorReview.countDocuments(filter);
 
     const response = {
       success: true,
+      type: type || "ALL", // 👈 clarity
       vendorStats: {
         avgRating: vendor.avgRating,
         totalReviews: vendor.totalReviews,
@@ -204,10 +238,11 @@ export const getVendorReviews = async (req, res) => {
         totalPages: Math.ceil(total / limit),
       },
     };
+
     await RedisCache.set(cacheKey, response, 300);
+
     res.status(200).json(response);
   } catch (error) {
-    console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
@@ -273,6 +308,5 @@ const updateVendorStats = async (vendorId) => {
     ratingBreakdown,
   });
 };
-
 
 //asgr

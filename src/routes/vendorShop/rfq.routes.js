@@ -8,7 +8,8 @@ import {
 import { requireAuth } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
-
+// ADMIN — VIEW ALL RFQs
+router.get("/rfq/admin", adminMiddleware, RFQController.getAdminRFQs);
 // USER — CREATE RFQ
 router.post("/create", authMiddleware, RFQController.createRFQ);
 
@@ -25,7 +26,6 @@ router.get(
   RFQController.getVendorRFQs,
 );
 
-// ADMIN — VIEW ALL RFQs
-router.get("/rfq/admin", adminMiddleware, RFQController.getAdminRFQs);
+
 
 export default router;

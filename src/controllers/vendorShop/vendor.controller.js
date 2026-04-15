@@ -1305,39 +1305,593 @@ export const disableVendorStatus = async (req, res, next) => {
   }
 };
 //vendorshop - catogry
+// export const getCategoriesByVendorId = async (req, res) => {
+//   const vendorId = req.params.vendorId;
+//   const categories = await productModel.aggregate([
+//     {
+//       $match: {
+//         vendorId: new mongoose.Types.ObjectId(vendorId),
+//       },
+//     },
+//     {
+//       $group: {
+//         _id: "$categoryId",
+//       },
+//     },
+//     {
+//       $lookup: {
+//         from: "categories",
+//         localField: "_id",
+//         foreignField: "_id",
+//         as: "category",
+//       },
+//     },
+//     { $unwind: "$category" },
+//     { $replaceRoot: { newRoot: "$category" } },
+//   ]);
+//   res.status(200).json({
+//     data: categories.map((category) => ({
+//       id: category._id,
+//       name: category.name,
+//       image: category.image,
+//     })),
+//   });
+// };
+
+//with variant type filter BULK or RETAIL categories
+// export const getCategoriesByVendorId = async (req, res) => {
+//   try {
+//     const { vendorId } = req.params;
+//     const { type } = req.query;
+
+//     // ✅ validate
+//     if (!vendorId) {
+//       return res.status(400).json({ message: "vendorId required" });
+//     }
+
+//     if (!type || !["BULK", "RETAIL"].includes(type)) {
+//       return res.status(400).json({
+//         message: "Type must be BULK or RETAIL",
+//       });
+//     }
+
+//     const categories = await productModel.aggregate([
+//       {
+//         $match: {
+//           vendorId: new mongoose.Types.ObjectId(vendorId),
+//           disable: false,
+//         },
+//       },
+
+//       {
+//         $lookup: {
+//           from: "variants",
+//           let: { productId: "$_id" },
+//           pipeline: [
+//             {
+//               $match: {
+//                 $expr: { $eq: ["$productId", "$$productId"] },
+//                 disable: false,
+//                 Type: type,
+//                 // price: { $gt: 0 }, // remove invalid
+//               },
+//             },
+//             { $limit: 1 },
+//           ],
+//           as: "variant",
+//         },
+//       },
+
+//       {
+//         $match: {
+//           variant: { $ne: [] },
+//         },
+//       },
+
+//       {
+//         $group: {
+//           _id: "$categoryId",
+//         },
+//       },
+
+//       {
+//         $lookup: {
+//           from: "categories",
+//           localField: "_id",
+//           foreignField: "_id",
+//           as: "category",
+//         },
+//       },
+//       { $unwind: "$category" },
+
+//       // optional: only active categories
+//       {
+//         $match: {
+//           "category.isActive": true,
+//         },
+//       },
+
+//       {
+//         $project: {
+//           _id: 0,
+//           id: "$category._id",
+//           name: "$category.name",
+//           image: "$category.image",
+//         },
+//       },
+//     ]);
+
+//     res.status(200).json({
+//       success: true,
+//       results: categories.length,
+//       data: categories,
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "Something went wrong" });
+//   }
+// };
 export const getCategoriesByVendorId = async (req, res) => {
-  const vendorId = req.params.vendorId;
-  const categories = await productModel.aggregate([
-    {
-      $match: {
-        vendorId: new mongoose.Types.ObjectId(vendorId),
+  try {
+    const { vendorId } = req.params;
+    const { type } = req.query;
+
+    if (!vendorId || !type) {
+      return res.status(400).json({
+        success: false,
+        message: "vendorId and type required",
+      });
+    }
+
+    const categories = await productModel.aggregate([
+      {
+        $match: {
+          vendorId: new mongoose.Types.ObjectId(vendorId),
+          disable: false,
+        },
       },
-    },
-    {
-      $group: {
-        _id: "$categoryId",
+
+      // ✅ SAME LOGIC AS PRODUCT API
+      {
+        $lookup: {
+          from: "variants",
+          let: { productId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$productId", "$$productId"] },
+                disable: false,
+
+                // ✅ TYPE FILTER
+                Type: { $regex: `^${type}$`, $options: "i" },
+              },
+            },
+            { $limit: 1 },
+          ],
+          as: "variant",
+        },
       },
-    },
-    {
-      $lookup: {
-        from: "categories",
-        localField: "_id",
-        foreignField: "_id",
-        as: "category",
+
+      // only those products jisme variant mila
+      {
+        $match: {
+          variant: { $ne: [] },
+        },
       },
-    },
-    { $unwind: "$category" },
-    { $replaceRoot: { newRoot: "$category" } },
-  ]);
-  res.status(200).json({
-    data: categories.map((category) => ({
-      id: category._id,
-      name: category.name,
-      image: category.image,
-    })),
-  });
+
+      // ✅ group category
+      {
+        $group: {
+          _id: "$categoryId",
+          productCount: { $sum: 1 },
+        },
+      },
+
+      // ✅ category details
+      {
+        $lookup: {
+          from: "categories",
+          localField: "_id",
+          foreignField: "_id",
+          as: "category",
+        },
+      },
+      { $unwind: "$category" },
+
+      {
+        $project: {
+          _id: 0,
+          id: "$category._id",
+          name: "$category.name",
+          image: "$category.image",
+          productCount: 1,
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      results: categories.length,
+      data: categories,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Error",
+    });
+  }
 };
 
+//whole response data
+// export const getProductsByVendorAndCategory = async (req, res, next) => {
+//   try {
+//     const {
+//       page = 1,
+//       limit = 10,
+//       sort,
+//       search,
+//       type,
+//       minPrice,
+//       maxPrice,
+//     } = req.query;
+
+//     const { vendorId, categoryId } = req.params;
+
+//     // ✅ validation
+//     if (!vendorId || !categoryId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "vendorId and categoryId required",
+//       });
+//     }
+
+//     if (!type || !["BULK", "RETAIL"].includes(type.toUpperCase())) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Type must be BULK or RETAIL",
+//       });
+//     }
+
+//     const pageNum = Number(page);
+//     const limitNum = Number(limit);
+//     const skip = (pageNum - 1) * limitNum;
+
+//     const pipeline = [];
+
+//     // ✅ base match
+//     const matchStage = {
+//       vendorId: new mongoose.Types.ObjectId(vendorId),
+//       categoryId: new mongoose.Types.ObjectId(categoryId),
+//       disable: false,
+//     };
+
+//     // ✅ search
+//     if (search) {
+//       matchStage.$or = [
+//         { name: { $regex: search, $options: "i" } },
+//         { slug: { $regex: search, $options: "i" } },
+//       ];
+//     }
+
+//     pipeline.push({ $match: matchStage });
+
+//     // ✅ variant lookup (MAIN LOGIC)
+//     pipeline.push({
+//       $lookup: {
+//         from: "variants",
+//         let: { productId: "$_id" },
+//         pipeline: [
+//           {
+//             $match: {
+//               $expr: { $eq: ["$productId", "$$productId"] },
+//               disable: false,
+
+//               // ✅ TYPE FILTER
+//               Type: { $regex: `^${type}$`, $options: "i" },
+
+//               ...(minPrice || maxPrice
+//                 ? {
+//                     price: {
+//                       ...(minPrice && { $gte: Number(minPrice) }),
+//                       ...(maxPrice && { $lte: Number(maxPrice) }),
+//                     },
+//                   }
+//                 : {}),
+//             },
+//           },
+//           { $sort: { price: 1 } },
+//           { $limit: 1 },
+//         ],
+//         as: "variant",
+//       },
+//     });
+
+//     // ✅ keep only valid products
+//     pipeline.push({
+//       $match: {
+//         variant: { $ne: [] },
+//       },
+//     });
+
+//     // ✅ convert to object
+//     pipeline.push({
+//       $addFields: {
+//         defaultVariant: { $arrayElemAt: ["$variant", 0] },
+//       },
+//     });
+
+//     // ================= SORT =================
+//     pipeline.push({
+//       $sort:
+//         sort === "priceLowHigh"
+//           ? { "defaultVariant.price": 1 }
+//           : sort === "priceHighLow"
+//             ? { "defaultVariant.price": -1 }
+//             : sort === "oldest"
+//               ? { createdAt: 1 }
+//               : { createdAt: -1 }, // newest default
+//     });
+
+//     // ================= PAGINATION =================
+//     pipeline.push({
+//       $facet: {
+//         products: [{ $skip: skip }, { $limit: limitNum }],
+//         totalCount: [{ $count: "count" }],
+//       },
+//     });
+
+//     // ================= FORMAT =================
+//     pipeline.push({
+//       $addFields: {
+//         totalCount: { $arrayElemAt: ["$totalCount.count", 0] },
+//       },
+//     });
+
+//     pipeline.push({ $unwind: "$products" });
+
+//     // brand lookup (optional)
+//     pipeline.push({
+//       $lookup: {
+//         from: "brands",
+//         localField: "products.brandId",
+//         foreignField: "_id",
+//         pipeline: [{ $project: { name: 1 } }],
+//         as: "products.brandId",
+//       },
+//     });
+
+//     pipeline.push({
+//       $unwind: {
+//         path: "$products.brandId",
+//         preserveNullAndEmptyArrays: true,
+//       },
+//     });
+
+//     pipeline.push({
+//       $group: {
+//         _id: null,
+//         products: { $push: "$products" },
+//         totalCount: { $first: "$totalCount" },
+//       },
+//     });
+
+//     // ================= EXECUTE =================
+//     const result = await Product.aggregate(pipeline);
+
+//     const products = result[0]?.products || [];
+//     const total = result[0]?.totalCount || 0;
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Products fetched successfully",
+//       results: products.length,
+//       total,
+//       page: pageNum,
+//       totalPages: Math.ceil(total / limitNum),
+//       data: { products },
+//     });
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+
+//optmize respose data
+export const getProductsByVendorAndCategory = async (req, res, next) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      sort,
+      search,
+      type,
+      minPrice,
+      maxPrice,
+    } = req.query;
+
+    const { vendorId, categoryId } = req.params;
+
+    if (!vendorId || !categoryId) {
+      return res.status(400).json({
+        success: false,
+        message: "vendorId and categoryId required",
+      });
+    }
+
+    if (!type || !["BULK", "RETAIL"].includes(type.toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: "Type must be BULK or RETAIL",
+      });
+    }
+
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const pipeline = [];
+
+    // ================= BASE MATCH =================
+    const matchStage = {
+      vendorId: new mongoose.Types.ObjectId(vendorId),
+      categoryId: new mongoose.Types.ObjectId(categoryId),
+      disable: false,
+    };
+
+    if (search) {
+      matchStage.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { slug: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    pipeline.push({ $match: matchStage });
+
+    // ================= VARIANT LOOKUP =================
+    pipeline.push({
+      $lookup: {
+        from: "variants",
+        let: { productId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$productId", "$$productId"] },
+              disable: false,
+              Type: { $regex: `^${type}$`, $options: "i" },
+
+              ...(minPrice || maxPrice
+                ? {
+                    price: {
+                      ...(minPrice && { $gte: Number(minPrice) }),
+                      ...(maxPrice && { $lte: Number(maxPrice) }),
+                    },
+                  }
+                : {}),
+            },
+          },
+          { $sort: { price: 1 } },
+          { $limit: 1 },
+        ],
+        as: "variant",
+      },
+    });
+
+    // ================= FILTER VALID PRODUCTS =================
+    pipeline.push({
+      $match: {
+        variant: { $ne: [] },
+      },
+    });
+
+    // ================= MAKE defaultVariant =================
+    pipeline.push({
+      $addFields: {
+        defaultVariant: { $arrayElemAt: ["$variant", 0] },
+      },
+    });
+
+    // ================= SORT =================
+    pipeline.push({
+      $sort:
+        sort === "priceLowHigh"
+          ? { "defaultVariant.price": 1 }
+          : sort === "priceHighLow"
+            ? { "defaultVariant.price": -1 }
+            : sort === "oldest"
+              ? { createdAt: 1 }
+              : { createdAt: -1 },
+    });
+
+    // ================= PAGINATION =================
+    pipeline.push({
+      $facet: {
+        products: [{ $skip: skip }, { $limit: limitNum }],
+        totalCount: [{ $count: "count" }],
+      },
+    });
+
+    // ================= FORMAT =================
+    pipeline.push({
+      $addFields: {
+        totalCount: { $arrayElemAt: ["$totalCount.count", 0] },
+      },
+    });
+
+    pipeline.push({ $unwind: "$products" });
+
+    // ================= BRAND LOOKUP =================
+    pipeline.push({
+      $lookup: {
+        from: "brands",
+        localField: "products.brandId",
+        foreignField: "_id",
+        pipeline: [{ $project: { name: 1 } }],
+        as: "products.brandId",
+      },
+    });
+
+    pipeline.push({
+      $unwind: {
+        path: "$products.brandId",
+        preserveNullAndEmptyArrays: true,
+      },
+    });
+
+    // ================= CLEAN RESPONSE =================
+    pipeline.push({
+      $project: {
+        _id: 0,
+        product: {
+          _id: "$products._id",
+          name: "$products.name",
+          slug: "$products.slug",
+          images: "$products.images",
+          thumbnail: "$products.thumbnail",
+          avgRating: "$products.avgRating",
+          reviewCount: "$products.reviewCount",
+          sold: "$products.sold",
+          brand: "$products.brandId.name",
+
+          defaultVariant: {
+            price: "$products.defaultVariant.price",
+            mrp: "$products.defaultVariant.mrp",
+            discount: "$products.defaultVariant.discount",
+            Type: "$products.defaultVariant.Type",
+          },
+
+          createdAt: "$products.createdAt",
+        },
+        totalCount: 1,
+      },
+    });
+
+    pipeline.push({
+      $group: {
+        _id: null,
+        products: { $push: "$product" },
+        totalCount: { $first: "$totalCount" },
+      },
+    });
+
+    // ================= EXECUTE =================
+    const result = await Product.aggregate(pipeline);
+
+    const products = result[0]?.products || [];
+    const total = result[0]?.totalCount || 0;
+
+    return res.status(200).json({
+      success: true,
+      message: "Products fetched successfully",
+      results: products.length,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      data: { products },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 export const refreshTokenHandler = async (req, res) => {
   try {
     const { refreshToken } = req.body;

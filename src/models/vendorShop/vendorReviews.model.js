@@ -12,6 +12,11 @@ const vendorReviewsSchema = new mongoose.Schema(
       ref: "vendorProfile",
       required: true,
     },
+    type: {
+      type: String,
+      enum: ["BULK", "RETAIL"],
+      required: true,
+    },
 
     rating: {
       type: Number,

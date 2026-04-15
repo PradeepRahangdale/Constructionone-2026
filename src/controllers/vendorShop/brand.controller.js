@@ -65,77 +65,210 @@ class BrandController {
   }
 
   //get brand for vendor shop profiles
+  // static async getVendorBrands(req, res) {
+  //   const { vendorId } = req.params;
+  //   const { search } = req.query; //<-- brand name search
+
+  //   const cacheKey = `brands:${vendorId}:${search || ""}`;
+  //   const cached = await RedisCache.get(cacheKey);
+  //   if (cached) return res.json(cached);
+
+  //   const pipeline = [
+  //     {
+  //       $match: {
+  //         vendorId: new mongoose.Types.ObjectId(vendorId),
+  //         disable: false,
+  //       },
+  //     },
+
+  //     {
+  //       $group: {
+  //         _id: "$brandId",
+  //         totalProducts: { $sum: 1 },
+  //       },
+  //     },
+
+  //     {
+  //       $lookup: {
+  //         from: "brands",
+  //         localField: "_id",
+  //         foreignField: "_id",
+  //         as: "brand",
+  //       },
+  //     },
+  //     { $unwind: "$brand" },
+
+  //     {
+  //       $match: {
+  //         "brand.status": "active",
+  //       },
+  //     },
+  //   ];
+  //   //  Optional brand name filter
+  //   if (search) {
+  //     pipeline.push({
+  //       $match: {
+  //         "brand.name": { $regex: search, $options: "i" }, // case-insensitive
+  //       },
+  //     });
+  //   }
+  //   pipeline.push(
+  //     {
+  //       $project: {
+  //         _id: 0,
+  //         brandId: "$brand._id",
+  //         name: "$brand.name",
+  //         slug: "$brand.slug",
+  //         logo: "$brand.logo",
+  //         totalProducts: 1,
+  //       },
+  //     },
+  //     {
+  //       $sort: {
+  //         totalProducts: -1,
+  //       },
+  //     },
+  //   );
+
+  //   const brands = await productModel.aggregate(pipeline);
+  //   await RedisCache.set(cacheKey, brands);
+  //   res.status(200).json({
+  //     success: true,
+  //     data: brands,
+  //   });
+  // }
+
   static async getVendorBrands(req, res) {
-    const { vendorId } = req.params;
-    const { search } = req.query; //<-- brand name search
+    try {
+      const { vendorId } = req.params;
+      const { search, type } = req.query;
 
-    const cacheKey = `brands:${vendorId}:${search || ""}`;
-    const cached = await RedisCache.get(cacheKey);
-    if (cached) return res.json(cached);
+      // ✅ validation
+      if (!vendorId) {
+        return res.status(400).json({
+          success: false,
+          message: "vendorId required",
+        });
+      }
 
-    const pipeline = [
-      {
-        $match: {
-          vendorId: new mongoose.Types.ObjectId(vendorId),
-          disable: false,
-        },
-      },
+      if (!type || !["BULK", "RETAIL"].includes(type.toUpperCase())) {
+        return res.status(400).json({
+          success: false,
+          message: "Type must be BULK or RETAIL",
+        });
+      }
 
-      {
-        $group: {
-          _id: "$brandId",
-          totalProducts: { $sum: 1 },
-        },
-      },
+      const cacheKey = `brands:${vendorId}:${type}:${search || ""}`;
+      const cached = await RedisCache.get(cacheKey);
+      if (cached) return res.json(cached);
 
-      {
-        $lookup: {
-          from: "brands",
-          localField: "_id",
-          foreignField: "_id",
-          as: "brand",
+      const pipeline = [
+        // ✅ vendor products
+        {
+          $match: {
+            vendorId: new mongoose.Types.ObjectId(vendorId),
+            disable: false,
+          },
         },
-      },
-      { $unwind: "$brand" },
 
-      {
-        $match: {
-          "brand.status": "active",
+        // ✅ VARIANT FILTER (IMPORTANT)
+        {
+          $lookup: {
+            from: "variants",
+            let: { productId: "$_id" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ["$productId", "$$productId"] },
+                  disable: false,
+
+                  // ✅ TYPE FILTER
+                  Type: { $regex: `^${type}$`, $options: "i" },
+                },
+              },
+              { $limit: 1 },
+            ],
+            as: "variant",
+          },
         },
-      },
-    ];
-    //  Optional brand name filter
-    if (search) {
-      pipeline.push({
-        $match: {
-          "brand.name": { $regex: search, $options: "i" }, // case-insensitive
+
+        // ✅ only valid products
+        {
+          $match: {
+            variant: { $ne: [] },
+          },
         },
+
+        // ✅ group by brand
+        {
+          $group: {
+            _id: "$brandId",
+            totalProducts: { $sum: 1 },
+          },
+        },
+
+        // ✅ brand lookup
+        {
+          $lookup: {
+            from: "brands",
+            localField: "_id",
+            foreignField: "_id",
+            as: "brand",
+          },
+        },
+        { $unwind: "$brand" },
+
+        // ✅ active brands only
+        {
+          $match: {
+            "brand.status": "active",
+          },
+        },
+      ];
+
+      // ✅ search filter
+      if (search) {
+        pipeline.push({
+          $match: {
+            "brand.name": { $regex: search, $options: "i" },
+          },
+        });
+      }
+
+      // ✅ final response
+      pipeline.push(
+        {
+          $project: {
+            _id: 0,
+            brandId: "$brand._id",
+            name: "$brand.name",
+            slug: "$brand.slug",
+            logo: "$brand.logo",
+            totalProducts: 1,
+          },
+        },
+        {
+          $sort: { totalProducts: -1 },
+        },
+      );
+
+      const brands = await productModel.aggregate(pipeline);
+
+      const response = {
+        success: true,
+        data: brands,
+      };
+
+      await RedisCache.set(cacheKey, response, 60);
+
+      return res.status(200).json(response);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({
+        success: false,
+        message: "Something went wrong",
       });
     }
-    pipeline.push(
-      {
-        $project: {
-          _id: 0,
-          brandId: "$brand._id",
-          name: "$brand.name",
-          slug: "$brand.slug",
-          logo: "$brand.logo",
-          totalProducts: 1,
-        },
-      },
-      {
-        $sort: {
-          totalProducts: -1,
-        },
-      },
-    );
-
-    const brands = await productModel.aggregate(pipeline);
-    await RedisCache.set(cacheKey, brands);
-    res.status(200).json({
-      success: true,
-      data: brands,
-    });
   }
   //  GET ONE
   static async getBrand(req, res, next) {
