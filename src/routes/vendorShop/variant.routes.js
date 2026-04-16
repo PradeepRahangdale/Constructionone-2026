@@ -8,6 +8,11 @@ const router = Router();
 
 // Base: /api/v1/material/variants
 router.get("/variants", authMiddleware, VariantController.getVariants);
+router.get(
+  "/:vendorId/products/:productId/variants",
+  authMiddleware,
+  VariantController.getVendorProductVariants,
+);
 
 router.post(
   "/variants",

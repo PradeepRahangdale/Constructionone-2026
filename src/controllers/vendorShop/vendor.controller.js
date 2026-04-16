@@ -14,7 +14,7 @@ import RedisCache from "../../utils/redisCache.js";
 import productModel from "../../models/vendorShop/product.model.js";
 import mongoose from "mongoose";
 import refreshTokenModel from "../../models/vendorShop/refreshToken.model.js";
-
+import VendorBankAccount from "../../models/vendorShop/vendorBankAccount.model.js";
 //vendor auth
 export const vendorAuth = async (req, res) => {
   try {
@@ -32,6 +32,7 @@ export const vendorAuth = async (req, res) => {
     // Check ANY user (verified or not)
     let user = await VendorProfile.findOne({
       phoneNumber: validatedPhone,
+      isPhoneVerified: true,
     });
 
     // const otp = generateOtp();
@@ -46,7 +47,7 @@ export const vendorAuth = async (req, res) => {
     };
 
     // CASE 1: User exists + verified → LOGIN
-    if (user && user.isPhoneVerified) {
+    if (user) {
       return res.status(200).json({
         success: true,
         type: "LOGIN",
@@ -730,49 +731,50 @@ export const logoutVendor = async (req, res, next) => {
     next(error);
   }
 };
+
 //vendor add Shop details
-export const upsertVendorCompanyInfo = async (req, res) => {
-  try {
-    const { vendorId, ...companyData } = req.body;
+// export const upsertVendorCompanyInfo = async (req, res) => {
+//   try {
+//     const { vendorId, ...companyData } = req.body;
 
-    if (req.files) {
-      if (req.files.shopImages) {
-        companyData.shopImages = req.files.shopImages.map(
-          (file) => file.location,
-        );
-      }
+//     if (req.files) {
+//       if (req.files.shopImages) {
+//         companyData.shopImages = req.files.shopImages.map(
+//           (file) => file.location,
+//         );
+//       }
 
-      if (req.files.certificates) {
-        companyData.certificates = req.files.certificates.map(
-          (file) => file.location,
-        );
-      }
+//       if (req.files.certificates) {
+//         companyData.certificates = req.files.certificates.map(
+//           (file) => file.location,
+//         );
+//       }
 
-      if (req.files.cancelledCheque) {
-        companyData.cancelledCheque = req.files.cancelledCheque[0].location;
-      }
-    }
+//       if (req.files.cancelledCheque) {
+//         companyData.cancelledCheque = req.files.cancelledCheque[0].location;
+//       }
+//     }
 
-    await VendorCompany.create({
-      vendorId,
-      ...companyData,
-    });
-    const vendor = await VendorProfile.findById(vendorId);
-    vendor.isProfileCompleted = true;
-    await vendor.save();
+//     await VendorCompany.create({
+//       vendorId,
+//       ...companyData,
+//     });
+//     const vendor = await VendorProfile.findById(vendorId);
+//     vendor.isProfileCompleted = true;
+//     await vendor.save();
 
-    return res.status(200).json({
-      success: true,
-      message: "Company details saved successfully",
-      data: companyData,
-    });
-  } catch (e) {
-    return res.status(500).json({
-      success: false,
-      error: e.message,
-    });
-  }
-};
+//     return res.status(200).json({
+//       success: true,
+//       message: "Company details saved successfully",
+//       data: companyData,
+//     });
+//   } catch (e) {
+//     return res.status(500).json({
+//       success: false,
+//       error: e.message,
+//     });
+//   }
+// };
 
 //bank details issues!
 // import VendorBankAccount from "../models/vendorBankAccount.model.js";
@@ -780,7 +782,7 @@ export const upsertVendorCompanyInfo = async (req, res) => {
 //   try {
 //     const { vendorId, bankDetails, ...companyData } = req.body;
 
-//     // 🟢 Handle files
+//     // Handle files
 //     if (req.files) {
 //       if (req.files.shopImages) {
 //         companyData.shopImages = req.files.shopImages.map(
@@ -800,13 +802,13 @@ export const upsertVendorCompanyInfo = async (req, res) => {
 //       }
 //     }
 
-//     // 🟢 Save Company
+//     // Save Company
 //     const company = await VendorCompany.create({
 //       vendorId,
 //       ...companyData,
 //     });
 
-//     // 🔥 🟢 Save Bank (IMPORTANT)
+//     //  Save Bank (IMPORTANT)
 //     if (bankDetails) {
 //       const {
 //         accountHolderName,
@@ -846,6 +848,105 @@ export const upsertVendorCompanyInfo = async (req, res) => {
 //   }
 // };
 //update Shop details
+
+export const upsertVendorCompanyInfo = async (req, res) => {
+  try {
+    // ✅ Parse bankDetails FIRST
+    if (req.body.bankDetails && typeof req.body.bankDetails === "string") {
+      try {
+        req.body.bankDetails = JSON.parse(req.body.bankDetails);
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid bankDetails JSON",
+        });
+      }
+    }
+
+    const { vendorId, bankDetails, ...companyData } = req.body;
+
+    // 📁 Handle Files
+    if (req.files) {
+      if (req.files.shopImages) {
+        companyData.shopImages = req.files.shopImages.map(
+          (file) => file.location,
+        );
+      }
+
+      if (req.files.certificates) {
+        companyData.certificates = req.files.certificates.map(
+          (file) => file.location,
+        );
+      }
+    }
+
+    // 🏢 Create Company
+    const company = await VendorCompany.create({
+      vendorId,
+      ...companyData,
+    });
+
+    // 🏦 Create Bank (if provided)
+    if (bankDetails) {
+      const {
+        accountHolderName,
+        accountNumber,
+        confirmAccountNumber,
+        ifscCode,
+        bankName,
+        accountType,
+        upiId,
+      } = bankDetails;
+
+      //  Safety check (extra layer)
+      if (accountNumber !== confirmAccountNumber) {
+        return res.status(400).json({
+          success: false,
+          message: "Account number mismatch",
+        });
+      }
+
+      // 📄 Cancelled cheque
+      let cancelledChequeUrl = "";
+      if (req.files?.cancelledCheque) {
+        cancelledChequeUrl = req.files.cancelledCheque[0].location;
+      }
+
+      // 🔍 Check existing default bank
+      const existingBank = await VendorBankAccount.findOne({ vendorId });
+
+      // 💾 Save bank (NO confirmAccountNumber in DB)
+      await VendorBankAccount.create({
+        vendorId,
+        accountHolderName,
+        accountNumber,
+        ifscCode,
+        bankName,
+        accountType,
+        upiId,
+        cancelledCheque: cancelledChequeUrl,
+        isDefault: existingBank ? false : true,
+      });
+    }
+
+    // 👤 Update Profile
+    await VendorProfile.findByIdAndUpdate(vendorId, {
+      isProfileCompleted: true,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Company & Bank saved successfully",
+      data: company,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      error: e.message,
+    });
+  }
+};
+
 export const updateUpsertVendorCompanyInfo = async (req, res) => {
   try {
     const vendorId = req.user.id;
@@ -1029,6 +1130,142 @@ export const getAllVendors = async (req, res) => {
     });
   } catch (error) {
     console.error("Get Vendors Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getAllVendorsViaModuleId = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const skip = (page - 1) * limit;
+
+    const { search, isAdminVerified, disable, moduleId, sort } = req.query;
+
+    const cacheKey = `vendors:module:v1:${JSON.stringify(req.query)}`;
+    const cached = await RedisCache.get(cacheKey);
+    if (cached) return res.json(cached);
+
+    const matchVendor = {};
+
+    // ---------------- MODULE FILTER ----------------
+    if (moduleId) {
+      matchVendor.moduleId = new mongoose.Types.ObjectId(moduleId);
+    }
+
+    if (isAdminVerified !== undefined) {
+      matchVendor.isAdminVerified = isAdminVerified === "true";
+    }
+
+    if (disable !== undefined) {
+      matchVendor.disable = disable === "true";
+    }
+
+    if (search) {
+      matchVendor.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phoneNumber: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    let sortStage = { createdAt: -1 };
+    if (sort === "oldest") sortStage = { createdAt: 1 };
+
+    // ---------------- PIPELINE ----------------
+    const pipeline = [
+      // 1️⃣ FILTER VENDOR PROFILE FIRST
+      { $match: matchVendor },
+
+      // 2️⃣ JOIN VENDOR COMPANY
+      {
+        $lookup: {
+          from: "vendorcompanies",
+          localField: "_id",
+          foreignField: "vendorId",
+          as: "vendorCompany",
+        },
+      },
+      {
+        $unwind: {
+          path: "$vendorCompany",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      // 3️⃣ FILTER COMPANY SEARCH (optional)
+      ...(search
+        ? [
+            {
+              $match: {
+                $or: [
+                  {
+                    "vendorCompany.companyName": {
+                      $regex: search,
+                      $options: "i",
+                    },
+                  },
+                ],
+              },
+            },
+          ]
+        : []),
+
+      // 4️⃣ SORT
+      { $sort: sortStage },
+
+      // 5️⃣ PAGINATION
+      { $skip: skip },
+      { $limit: limit },
+
+      // 6️⃣ CLEAN RESPONSE
+      {
+        $project: {
+          firstName: 1,
+          lastName: 1,
+          email: 1,
+          phoneNumber: 1,
+          isAdminVerified: 1,
+          disable: 1,
+          moduleId: 1,
+          createdAt: 1,
+
+          vendorCompany: {
+            companyName: 1,
+            companyType: 1,
+            businessCategory: 1,
+            badges: 1,
+            businessAddress: 1,
+            shopImages: 1,
+          },
+        },
+      },
+    ];
+
+    const [vendors, total] = await Promise.all([
+      VendorProfile.aggregate(pipeline),
+      VendorProfile.countDocuments(matchVendor),
+    ]);
+
+    const response = {
+      success: true,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+      data: vendors,
+    };
+
+    await RedisCache.set(cacheKey, response, 60);
+
+    return res.json(response);
+  } catch (error) {
     return res.status(500).json({
       success: false,
       message: error.message,
@@ -1946,7 +2183,7 @@ export const refreshTokenHandler = async (req, res) => {
     const newAccessToken = jwt.sign(
       { id: decoded.id, role: "vendor" },
       process.env.JWT_SECRET,
-      { expiresIn: "15m" },
+      { expiresIn: "30m" },
     );
 
     return res.json({

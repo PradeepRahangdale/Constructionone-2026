@@ -90,7 +90,6 @@ class VariantController {
       next(err);
     }
   }
-
   static async addVariant(req, res, next) {
     try {
       const { productId, ...variantData } = req.body;
@@ -398,6 +397,98 @@ class VariantController {
       await RedisCache.set(cacheKey, result, 300);
 
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getVendorProductVariants(req, res, next) {
+    try {
+      const { vendorId, productId } = req.params;
+
+      const page = Math.max(parseInt(req.query.page) || 1, 1);
+      const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+      const skip = (page - 1) * limit;
+
+      const cacheKey = `variants:vendor:product:v3:${vendorId}:${productId}:${page}:${limit}`;
+      const cached = await RedisCache.get(cacheKey);
+      if (cached) return res.json(cached);
+
+      const vId = new mongoose.Types.ObjectId(vendorId);
+      const pId = new mongoose.Types.ObjectId(productId);
+
+      const pipeline = [
+        // 1️⃣ join product
+        {
+          $lookup: {
+            from: "products",
+            localField: "productId",
+            foreignField: "_id",
+            as: "product",
+          },
+        },
+        { $unwind: "$product" },
+
+        // 2️⃣ match correct vendor + product
+        {
+          $match: {
+            "product._id": pId,
+            "product.vendorId": vId,
+          },
+        },
+
+        // 3️⃣ FINAL SHAPE
+        {
+          $project: {
+            _id: 1,
+            productId: 1,
+            vendorId: "$product.vendorId",
+
+            price: 1,
+            mrp: 1,
+            discountAmount: 1,
+            size: 1,
+            stock: 1,
+            sold: 1,
+            Type: 1,
+            disable: 1,
+            moq: 1,
+            packageWeight: 1,
+            packageDimensions: 1,
+            createdAt: 1,
+            updatedAt: 1,
+
+            productName: "$product.name",
+          },
+        },
+
+        { $sort: { _id: -1 } },
+        { $skip: skip },
+        { $limit: limit },
+      ];
+
+      const [variants, total] = await Promise.all([
+        Variant.aggregate(pipeline),
+        Variant.countDocuments({ productId: pId }),
+      ]);
+
+      const response = {
+        success: true,
+        message: "Vendor product variants fetched successfully",
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: page * limit < total,
+          hasPrevPage: page > 1,
+        },
+        data: variants,
+      };
+
+      await RedisCache.set(cacheKey, response, 300);
+
+      return res.json(response);
     } catch (err) {
       next(err);
     }

@@ -17,6 +17,9 @@ const vendorBankAccountSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    confirmAccountNumber: {
+      type: String,
+    },
     accountType: {
       type: String,
       enum: ["Saving", "Current", "NRO", "NRE", "Other"],
@@ -45,6 +48,7 @@ const vendorBankAccountSchema = new mongoose.Schema(
     upiId: {
       type: String,
     },
+    cancelledCheque: { type: String },
   },
   { timestamps: true },
 );

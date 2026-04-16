@@ -1,67 +1,76 @@
 import { body, param } from "express-validator";
 
-// Add Bank Account Validation
-export const validateAddBankAccount = [
-  body("accountHolderName")
-    .notEmpty()
-    .withMessage("Account holder name is required")
-    .isLength({ min: 3 })
-    .withMessage("Name must be at least 3 characters"),
+import Joi from "joi";
 
-  body("accountNumber")
-    .notEmpty()
-    .withMessage("Account number is required")
-    .isLength({ min: 8, max: 18 })
-    .withMessage("Account number must be 8-18 digits")
-    .isNumeric()
-    .withMessage("Account number must be numeric"),
+export const validateAddBankAccount = Joi.object({
+  accountHolderName: Joi.string().min(3).required(),
+  accountNumber: Joi.string().min(8).max(18).required(),
+  ifscCode: Joi.string().length(11).required(),
+  bankName: Joi.string().required(),
+  accountType: Joi.string()
+    .valid("Saving", "Current", "NRO", "NRE", "Other")
+    .optional(),
+  upiId: Joi.string().optional(),
+});
 
-  body("ifscCode")
-    .notEmpty()
-    .withMessage("IFSC code is required")
-    .isLength({ min: 11, max: 11 })
-    .withMessage("IFSC must be 11 characters"),
-
-  body("bankName").notEmpty().withMessage("Bank name is required"),
-
-  body("accountType")
-    .optional()
-    .isIn(["Saving", "Current", "NRO", "NRE", "Other"])
-    .withMessage("Invalid account type"),
-
-  body("upiId")
-    .optional()
-    .matches(/^[\w.-]+@[\w.-]+$/)
-    .withMessage("Invalid UPI ID"),
-];
-
-// Set Default Bank Validation
-export const validateSetDefaultBank = [
-  body("bankAccountId")
-    .notEmpty()
-    .withMessage("Bank account ID is required")
-    .isMongoId()
-    .withMessage("Invalid bank account ID"),
-];
+export const validateSetDefaultBank = Joi.object({
+  bankAccountId: Joi.string()
+    .required()
+    .custom((value, helpers) => {
+      if (!value.match(/^[0-9a-fA-F]{24}$/)) {
+        return helpers.error("any.invalid");
+      }
+      return value;
+    })
+    .messages({
+      "any.required": "Bank account ID is required",
+      "any.invalid": "Invalid bank account ID",
+    }),
+});
 
 //  Delete Bank Validation
-export const validateDeleteBank = [
-  param("id")
-    .notEmpty()
-    .withMessage("Bank ID is required")
-    .isMongoId()
-    .withMessage("Invalid bank ID"),
-];
+export const validateDeleteBank = Joi.object({
+  id: Joi.string()
+    .required()
+    .custom((value, helpers) => {
+      if (!value.match(/^[0-9a-fA-F]{24}$/)) {
+        return helpers.error("any.invalid");
+      }
+      return value;
+    })
+    .messages({
+      "any.required": "Bank ID is required",
+      "any.invalid": "Invalid bank ID",
+    }),
+});
 
-export const validateWithdrawal = [
-  body("bankAccountId")
-    .optional() //  optional (default bank use ho sakta hai)
-    .isMongoId()
-    .withMessage("Invalid bank account ID"),
+export const validateWithdrawal = Joi.object({
+  bankAccountId: Joi.string()
+    .optional()
+    .custom((value, helpers) => {
+      if (value && !value.match(/^[0-9a-fA-F]{24}$/)) {
+        return helpers.error("any.invalid");
+      }
+      return value;
+    })
+    .messages({
+      "any.invalid": "Invalid bank account ID",
+    }),
 
-  body("amount")
-    .notEmpty()
-    .withMessage("Amount is required")
-    .isFloat({ min: 1 })
-    .withMessage("Amount must be greater than 0"),
-];
+  amount: Joi.number().required().min(1).messages({
+    "any.required": "Amount is required",
+    "number.base": "Amount must be a number",
+    "number.min": "Amount must be greater than 0",
+  }),
+});
+
+export const validateUpdateBankAccount = Joi.object({
+  accountHolderName: Joi.string().min(3).optional(),
+  accountNumber: Joi.string().min(8).max(18).optional(),
+  ifscCode: Joi.string().length(11).optional(),
+  bankName: Joi.string().optional(),
+  accountType: Joi.string()
+    .valid("Saving", "Current", "NRO", "NRE", "Other")
+    .optional(),
+  upiId: Joi.string().optional(),
+});

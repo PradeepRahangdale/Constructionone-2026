@@ -37,6 +37,19 @@ export const createFlashSale = catchAsync(async (req, res, next) => {
     );
 });
 
+export const updateFlashSaleController = catchAsync(async (req, res) => {
+  const { id, itemId } = req.params;
+  const result = await FlashSaleService.updateFlashSaleAndItem(
+    id,
+    itemId,
+    req.body,
+  );
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, result, "Flash sale updated successfully"));
+});
+
 // PUT /v1/admin/flash-sales/:id/cancel
 export const cancelFlashSale = catchAsync(async (req, res, next) => {
   const sale = await FlashSaleService.cancelFlashSale(req.params.id);
@@ -51,7 +64,48 @@ export const cancelFlashSale = catchAsync(async (req, res, next) => {
     );
 });
 
-// GET /v1/admin/flash-sales
+// GET /v1/admin/flash-sales-pradeep
+// export const getAllFlashSales = catchAsync(async (req, res) => {
+//   const { status, moduleId, vendorId, page = 1, limit = 20 } = req.query;
+
+//   const filter = {
+//     ...(status ? buildStatusFilter(status) : {}),
+//     ...(moduleId ? { moduleId } : {}),
+//     ...(vendorId ? { vendorId } : {}),
+//   };
+
+//   const skip = (Number(page) - 1) * Number(limit);
+
+//   const [total, sales] = await Promise.all([
+//     FlashSale.countDocuments(filter),
+//     FlashSale.find(filter)
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(Number(limit))
+//       .populate("moduleId", "title")
+//       .populate("vendorId", "firstName lastName phoneNumber")
+//       .populate("createdBy", "firstName lastName email")
+//       .lean(),
+//   ]);
+
+//   const salesWithStatus = FlashSale.attachStatus(sales);
+
+//   res.status(200).json(
+//     new ApiResponse(
+//       200,
+//       { flashSales: salesWithStatus },
+//       "Flash sales fetched successfully",
+//       {
+//         total,
+//         page: Number(page),
+//         limit: Number(limit),
+//         pages: Math.ceil(total / Number(limit)),
+//       },
+//     ),
+//   );
+// });
+
+//asgar
 export const getAllFlashSales = catchAsync(async (req, res) => {
   const { status, moduleId, vendorId, page = 1, limit = 20 } = req.query;
 
@@ -65,6 +119,7 @@ export const getAllFlashSales = catchAsync(async (req, res) => {
 
   const [total, sales] = await Promise.all([
     FlashSale.countDocuments(filter),
+
     FlashSale.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -75,23 +130,42 @@ export const getAllFlashSales = catchAsync(async (req, res) => {
       .lean(),
   ]);
 
-  const salesWithStatus = FlashSale.attachStatus(sales);
+  const flashSaleIds = sales.map((s) => s._id);
 
-  res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        { flashSales: salesWithStatus },
-        "Flash sales fetched successfully",
-        {
-          total,
-          page: Number(page),
-          limit: Number(limit),
-          pages: Math.ceil(total / Number(limit)),
-        },
-      ),
-    );
+  const items = await FlashSaleItem.find({
+    flashSaleId: { $in: flashSaleIds },
+  })
+    .populate("productId", "name")
+    .populate("variantId", "price stock packageWeight packageDimensions")
+    .lean();
+
+  const itemMap = {};
+  items.forEach((item) => {
+    const key = item.flashSaleId.toString();
+    if (!itemMap[key]) itemMap[key] = [];
+    itemMap[key].push(item);
+  });
+
+  const salesWithItems = sales.map((sale) => ({
+    ...sale,
+    items: itemMap[sale._id.toString()] || [],
+  }));
+
+  const finalSales = FlashSale.attachStatus(salesWithItems);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      { flashSales: finalSales },
+      "Flash sales fetched successfully",
+      {
+        total,
+        page: Number(page),
+        limit: Number(limit),
+        pages: Math.ceil(total / Number(limit)),
+      },
+    ),
+  );
 });
 
 // GET /v1/admin/flash-sales/:id

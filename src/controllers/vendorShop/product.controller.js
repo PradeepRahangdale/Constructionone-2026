@@ -182,7 +182,7 @@ class ProductController {
       const matchStage = {
         disable: false,
         varified: true,
-        status: { $ne: "DRAFT" },
+        status: "ACTIVE",
       };
 
       // ================= CATEGORY FILTERS =================
@@ -269,7 +269,25 @@ class ProductController {
       });
 
       // ================= ✅ FIXED VENDOR LOOKUP =================
+      // pipeline.push(
+      //   {
+      //     $lookup: {
+      //       from: "vendorcompanies",
+      //       localField: "vendorId",
+      //       foreignField: "vendorId",
+      //       as: "vendorCompany",
+      //     },
+      //   },
+      //   {
+      //     $unwind: {
+      //       path: "$vendorCompany",
+      //       preserveNullAndEmptyArrays: true, // IMPORTANT FIX
+      //     },
+      //   },
+      // );
+
       pipeline.push(
+        // ================= VENDOR COMPANY =================
         {
           $lookup: {
             from: "vendorcompanies",
@@ -281,7 +299,45 @@ class ProductController {
         {
           $unwind: {
             path: "$vendorCompany",
-            preserveNullAndEmptyArrays: true, // IMPORTANT FIX
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        // ================= VENDOR PROFILE =================
+        {
+          $lookup: {
+            from: "vendorprofiles",
+            localField: "vendorCompany.vendorId",
+            foreignField: "_id",
+            as: "vendorProfile",
+          },
+        },
+        {
+          $unwind: {
+            path: "$vendorProfile",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        // ================= FINAL CLEAN RESPONSE =================
+        {
+          $addFields: {
+            vendor: {
+              companyName: "$vendorCompany.companyName",
+              businessAddress: "$vendorCompany.businessAddress",
+              badges: "$vendorCompany.badges",
+              // shopImages: "$vendorCompany.shopImages",
+              firstName: "$vendorProfile.firstName",
+              lastName: "$vendorProfile.lastName",
+            },
+          },
+        },
+
+        // ================= REMOVE EXTRA FIELDS =================
+        {
+          $project: {
+            vendorCompany: 0,
+            vendorProfile: 0,
           },
         },
       );
@@ -333,7 +389,8 @@ class ProductController {
       next(error);
     }
   }
-  //products according to vendorshop - asgr
+
+  //products according to vendorshop
   // static async getVendorProducts(req, res, next) {
   //   try {
   //     const {
@@ -707,7 +764,81 @@ class ProductController {
       next(error);
     }
   }
+  static async getProductsByVendorId(req, res, next) {
+    try {
+      const { vendorId } = req.params;
+      const { search = "", page = 1, limit = 20 } = req.query;
 
+      if (!vendorId) {
+        return res.status(400).json({
+          success: false,
+          message: "vendorId is required",
+        });
+      }
+
+      const pageNum = Math.max(parseInt(page) || 1, 1);
+      const limitNum = Math.min(parseInt(limit) || 20, 50);
+      const skip = (pageNum - 1) * limitNum;
+
+      const cacheKey = `admin:vendor:products:${vendorId}:${search}:${pageNum}:${limitNum}`;
+      const cached = await RedisCache.get(cacheKey);
+      if (cached) return res.json(cached);
+
+      const matchStage = {
+        vendorId: new mongoose.Types.ObjectId(vendorId),
+      };
+
+      if (search) {
+        matchStage.name = { $regex: search, $options: "i" };
+      }
+
+      const pipeline = [
+        { $match: matchStage },
+
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+            vendorId: 1,
+          },
+        },
+
+        {
+          $facet: {
+            products: [{ $skip: skip }, { $limit: limitNum }],
+            totalCount: [{ $count: "count" }],
+          },
+        },
+
+        {
+          $addFields: {
+            total: { $arrayElemAt: ["$totalCount.count", 0] },
+          },
+        },
+      ];
+
+      const result = await Product.aggregate(pipeline);
+
+      const products = result[0]?.products || [];
+      const total = result[0]?.total || 0;
+
+      const response = {
+        success: true,
+        message: "Vendor products fetched successfully",
+        results: products.length,
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+        data: { products },
+      };
+
+      await RedisCache.set(cacheKey, response, 30);
+
+      return res.status(200).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
   static async createProduct(req, res, next) {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -1535,7 +1666,7 @@ class ProductController {
 
       const matchStage = {
         status: "DRAFT",
-        vendorId: new mongoose.Types.ObjectId(vendorId), // 🔥 key line
+        vendorId: new mongoose.Types.ObjectId(vendorId), // key line
       };
 
       if (search) {

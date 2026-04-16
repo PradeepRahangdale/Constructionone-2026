@@ -25,6 +25,7 @@ import {
   getCategoriesByVendorId,
   refreshTokenHandler,
   getProductsByVendorAndCategory,
+  getAllVendorsViaModuleId,
 } from "../../controllers/vendorShop/vendor.controller.js";
 import {
   adminMiddleware,
@@ -75,7 +76,7 @@ router.put(
 //add shop
 router.post(
   "/addshop",
-  vendorMiddleware,
+  // vendorMiddleware,
   s3Uploader().fields([
     { name: "shopImages", maxCount: 5 },
     { name: "certificates", maxCount: 5 },
@@ -100,6 +101,7 @@ router.put(
 // --------------admin api's---------
 router.get("/unverified", adminMiddleware, getUnverifiedVendors);
 router.get("/all", adminMiddleware, getAllVendors); //with pagination and limit and also search - name / email / phoneNumber / disable / varified filter
+router.get("/module/:moduleId", adminMiddleware, getAllVendorsViaModuleId);
 router.post("/admin-varify/:vendorId", adminMiddleware, verifyVendorByAdmin); //vendor varification
 router.patch("/:vendorId", adminMiddleware, disableVendorStatus); //eneble and disable vendor profile
 router.get("/:vendorId", adminMiddleware, getVendorById);
@@ -109,6 +111,7 @@ router.post(
   adminMiddleware,
   removeMultipleBadgesByAdmin,
 );
+
 router.post("/saveFcmToken", vendorMiddleware, saveFcmToken);
 router.post("/refresh-token", refreshTokenHandler);
 router.get("/vendorshop/:vendorId", getCategoriesByVendorId);

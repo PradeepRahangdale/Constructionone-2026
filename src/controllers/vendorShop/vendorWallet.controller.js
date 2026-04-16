@@ -263,26 +263,62 @@ export const cancelSettlement = async (vendorId, orderId, session) => {
   }
 };
 //get wallet balance
-export const getWallet = async (req, res) => {
-  const vendorId = req.user.id;
-  const wallet = await Wallet.findOne({ vendorId });
+// export const getWallet = async (req, res) => {
+//   const vendorId = req.user.id;
+//   const wallet = await Wallet.findOne({ vendorId });
 
-  if (!wallet) {
-    return res.status(404).json({
-      message: "Wallet not found",
+//   if (!wallet) {
+//     return res.status(404).json({
+//       message: "Wallet not found",
+//     });
+//   }
+//   const transactions = await vendorTransactionModel
+//     .find({ vendorId })
+//     .sort({ createdAt: -1 })
+//     .limit(10);
+
+//   res.json({
+//     totalBalance: wallet.totalBalance,
+//     available: wallet.availableBalance,
+//     onHold: wallet.onHoldBalance,
+//     transactions,
+//   });
+// };
+
+export const getWallet = async (req, res) => {
+  try {
+    const vendorId = req.user.id;
+    const wallet = await Wallet.findOneAndUpdate(
+      { vendorId },
+      {
+        $setOnInsert: {
+          vendorId,
+          totalBalance: 0,
+          availableBalance: 0,
+          onHoldBalance: 0,
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+      },
+    ).lean();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalBalance: wallet.totalBalance,
+        availableBalance: wallet.availableBalance,
+        onHoldBalance: wallet.onHoldBalance,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch wallet",
+      error: err.message,
     });
   }
-  const transactions = await vendorTransactionModel
-    .find({ vendorId })
-    .sort({ createdAt: -1 })
-    .limit(10);
-
-  res.json({
-    totalBalance: wallet.totalBalance,
-    available: wallet.availableBalance,
-    onHold: wallet.onHoldBalance,
-    transactions,
-  });
 };
 //transaction history
 export const getAllTransactionHistory = async (req, res) => {

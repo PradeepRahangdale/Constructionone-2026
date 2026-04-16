@@ -30,6 +30,11 @@ router.get(
   adminMiddleware,
   ProductController.getAllProductsAdmin,
 );
+router.get(
+  "/products/admin/vendor/:vendorId",
+  adminMiddleware,
+  ProductController.getProductsByVendorId,
+);
 
 //getProductBySubCategory vendor products
 router.get(

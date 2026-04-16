@@ -142,20 +142,20 @@ const vendorCompany = new mongoose.Schema(
 
     gstNumber: { type: String },
     contactNumber: { type: String },
-    accountHolderName: { type: String },
-    bankName: { type: String },
-    accountNumber: { type: String },
-    confirmAccountNumber: { type: String },
-    ifscCode: { type: String },
-    accountType: {
-      type: String,
-      enum: ["Saving", "Current", "NRO", "NRE", "Other"],
-      default: "Other",
-    },
-    upiId: { type: String },
+    // accountHolderName: { type: String },
+    // bankName: { type: String },
+    // accountNumber: { type: String },
+    // confirmAccountNumber: { type: String },
+    // ifscCode: { type: String },
+    // accountType: {
+    //   type: String,
+    //   enum: ["Saving", "Current", "NRO", "NRE", "Other"],
+    //   default: "Other",
+    // },
+    // upiId: { type: String },
     shopImages: [String],
     certificates: [String],
-    cancelledCheque: { type: String },
+    // cancelledCheque: { type: String },
     companyWebsiteURl: { type: String },
 
     badges: [
@@ -182,9 +182,7 @@ const vendorCompany = new mongoose.Schema(
 );
 
 // ================= GEO AUTO SET =================
-
 // auto set location on create
-
 vendorCompany.pre("save", function (next) {
   if (this.businessAddress?.latitude && this.businessAddress?.longitude) {
     this.location = {

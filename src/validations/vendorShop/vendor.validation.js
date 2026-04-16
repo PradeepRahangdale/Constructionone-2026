@@ -149,57 +149,61 @@ export const vendorCompanyValidation = [
     .isURL()
     .withMessage("Invalid website URL"),
 
-  body("accountHolderName")
-    .optional()
-    .isString()
-    .withMessage("Account holder name must be a string"),
+  // body("bankDetails.accountHolderName")
+  //   .optional()
+  //   .isString()
+  //   .withMessage("Account holder name must be a string"),
 
-  body("bankName")
-    .trim()
-    .notEmpty()
-    .withMessage("Bank name is required")
-    .isString()
-    .withMessage("Bank name must be a string"),
+  // body("bankDetails.bankName")
+  //   .trim()
+  //   .notEmpty()
+  //   .withMessage("Bank name is required")
+  //   .isString()
+  //   .withMessage("Bank name must be a string"),
 
-  body("accountNumber")
-    .trim()
-    .notEmpty()
-    .withMessage("Account number is required")
-    .isNumeric()
-    .withMessage("Account number must be numeric")
-    .isLength({ min: 9, max: 18 })
-    .withMessage("Account number must be between 9 to 18 digits"),
+  // body("bankDetails.accountNumber")
+  //   .trim()
+  //   .notEmpty()
+  //   .withMessage("Account number is required")
+  //   .isString()
+  //   .withMessage("Account number must be a string")
+  //   .matches(/^[0-9]{9,18}$/)
+  //   .withMessage("Account number must be 9 to 18 digits"),
 
-  body("confirmAccountNumber")
-    .trim()
-    .notEmpty()
-    .withMessage("Confirm account number is required")
-    .custom((value, { req }) => {
-      if (!req.body.accountNumber) {
-        throw new Error("Account number is missing");
-      }
-      if (value !== req.body.accountNumber) {
-        throw new Error("Account numbers do not match");
-      }
-      return true;
-    }),
+  // body("bankDetails.confirmAccountNumber")
+  //   .trim()
+  //   .notEmpty()
+  //   .withMessage("Confirm account number is required")
+  //   .isString()
+  //   .withMessage("Confirm account number must be a string")
+  //   .custom((value, { req }) => {
+  //     const accountNumber = req.body.bankDetails?.accountNumber;
 
-  body("ifscCode")
-    .optional()
-    .matches(/^[A-Z]{4}0[A-Z0-9]{6}$/)
-    .withMessage("Invalid IFSC code format (e.g. SBIN0123456)"),
+  //     if (!accountNumber) {
+  //       throw new Error("Account number is missing");
+  //     }
 
-  body("accountType")
-    .trim()
-    .notEmpty()
-    .withMessage("Account type is required")
-    .isIn(["Saving", "Current", "NRO", "NRE", "Other"])
-    .withMessage(
-      "Invalid account type. Must be one of: Saving, Current, NRO, NRE, Other",
-    ),
+  //     if (value !== accountNumber) {
+  //       throw new Error("Account numbers do not match");
+  //     }
 
-  body("upiId")
-    .optional()
-    .matches(/^[\w.-]+@[\w.-]+$/)
-    .withMessage("Invalid UPI ID format (e.g. name@upi)"),
+  //     return true;
+  //   }),
+
+  // body("bankDetails.ifscCode")
+  //   .optional()
+  //   .matches(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+  //   .withMessage("Invalid IFSC code format (e.g. SBIN0123456)"),
+
+  // body("bankDetails.accountType")
+  //   .trim()
+  //   .notEmpty()
+  //   .withMessage("Account type is required")
+  //   .isIn(["Saving", "Current", "NRO", "NRE", "Other"])
+  //   .withMessage("Invalid account type"),
+
+  // body("bankDetails.upiId")
+  //   .optional()
+  //   .matches(/^[\w.-]+@[\w.-]+$/)
+  //   .withMessage("Invalid UPI ID format"),
 ];

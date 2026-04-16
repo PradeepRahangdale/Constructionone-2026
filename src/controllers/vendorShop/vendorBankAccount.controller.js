@@ -1,36 +1,58 @@
-import VendorBankAccount from "../../models/vendorShop/vendotBankAccount.model.js";
+import VendorBankAccount from "../../models/vendorShop/vendorBankAccount.model.js";
 export const addBankAccount = async (req, res) => {
   try {
     const vendorId = req.user.id;
-    const { accountHolderName, accountNumber, ifscCode, bankName } = req.body;
+    const {
+      accountHolderName,
+      accountNumber,
+      ifscCode,
+      bankName,
+      accountType,
+      upiId,
+    } = req.body;
 
-    // count existing accounts
-    const count = await VendorBankAccount.countDocuments({ vendorId });
-    const account = await VendorBankAccount.create({
+    let cancelledCheque = "";
+    if (req.files?.cancelledCheque) {
+      cancelledCheque = req.files.cancelledCheque[0].location;
+    }
+
+    // check if vendor already has bank
+    const existingDefault = await VendorBankAccount.findOne({
+      vendorId,
+      isDefault: true,
+    });
+
+    const bank = await VendorBankAccount.create({
       vendorId,
       accountHolderName,
       accountNumber,
       ifscCode,
       bankName,
-      isDefault: count === 0,
+      accountType,
+      upiId,
+      cancelledCheque,
+      isDefault: existingDefault ? false : true, // first bank default
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: "Bank account added",
-      data: account,
+      message: "Bank added successfully",
+      data: bank,
     });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      error: e.message,
+    });
   }
 };
 export const getVendorBankAccounts = async (req, res) => {
   try {
     const vendorId = req.user.id;
-
+    // const vendorId = "69e0ba37e0de9730ed927351"
+    console.log("Fetching bank accounts for vendorId:", vendorId);
     const accounts = await VendorBankAccount.find({
       vendorId,
-      isActive: true,
     });
 
     res.status(200).json({
@@ -115,6 +137,64 @@ export const setDefaultBankAccount = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+export const updateBankAccount = async (req, res) => {
+  try {
+    const vendorId = req.user.id;
+    const { id } = req.params;
+
+    const {
+      accountHolderName,
+      accountNumber,
+      ifscCode,
+      bankName,
+      accountType,
+      upiId,
+    } = req.body;
+
+    // check bank exists & belongs to vendor
+    const bank = await VendorBankAccount.findOne({
+      _id: id,
+      vendorId,
+    });
+
+    if (!bank) {
+      return res.status(404).json({
+        success: false,
+        message: "Bank account not found",
+      });
+    }
+
+    // handle file upload
+    let cancelledCheque = bank.cancelledCheque;
+    if (req.files?.cancelledCheque) {
+      cancelledCheque = req.files.cancelledCheque[0].location;
+    }
+
+    // update fields (only if provided)
+    bank.accountHolderName = accountHolderName || bank.accountHolderName;
+    bank.accountNumber = accountNumber || bank.accountNumber;
+    bank.ifscCode = ifscCode || bank.ifscCode;
+    bank.bankName = bankName || bank.bankName;
+    bank.accountType = accountType || bank.accountType;
+    bank.upiId = upiId || bank.upiId;
+    bank.cancelledCheque = cancelledCheque;
+
+    await bank.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Bank account updated successfully",
+      data: bank,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: e.message,
+    });
+  }
+};
+
 // import vendorWithdrawalBalanceModel from "../../models/vendorShop/vendorWithdrawalBalance.model.js";
 // export const getWithdrawals = async (req, res) => {
 //   try {

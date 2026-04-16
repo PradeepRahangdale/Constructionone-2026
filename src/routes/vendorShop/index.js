@@ -11,8 +11,8 @@ router.use("/vendor", vendorReview);
 router.use("/vendor", shoptiming);
 router.use("/vendor", vendorWallet);
 router.use("/vendor", vendorWithdrawal);
-router.use("/vendor", vendorAuth);
 router.use("/vendor", vendorBankAccount);
+router.use("/vendor", vendorAuth);
 
 export default router;
 //asgr
