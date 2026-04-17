@@ -10,9 +10,8 @@ export const trendingCacheKey = (slug, searchKeyword = '') => `trending:${slug}:
 export const invalidateTrending = async (moduleId) => {
     const mod = await PlatformModule.findById(moduleId).select("slug").lean();
     if (mod?.slug) {
-        // Find existing cache keys pattern and delete (this is simple flush, in prod use pattern matching)
-        // Since we may have search keywords cached, better to delete the exact 'all' cache
-        await RedisCache.delete(trendingCacheKey(mod.slug, ''));
+        // Clear all variations (search keywords, etc.) for this slug
+        await RedisCache.deletePattern(`trending:${mod.slug}:*`);
     }
 };
 
