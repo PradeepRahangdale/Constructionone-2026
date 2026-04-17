@@ -12,7 +12,7 @@ export const homeCacheKey = (slug) => `home:${slug}`;
 export const invalidateHome = async (moduleId) => {
   // Find the slug for the moduleId and delete its cache
   const mod = await PlatformModule.findById(moduleId).select("slug").lean();
-  if (mod?.slug) await RedisCache.delete(homeCacheKey(mod.slug));
+  if (mod?.slug) await RedisCache.deletePattern(`${homeCacheKey(mod.slug)}*`);
 };
 
 // ─── Public: build full home for a module ─────────────────────────────────────

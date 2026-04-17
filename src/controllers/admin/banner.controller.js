@@ -12,7 +12,7 @@ export const createBanner = catchAsync(async (req, res) => {
     if (req.file) req.body.image = req.file.location;
 
     const banner = await bannerService.create(req.body, req.user.id);
-    await RedisCache.delete(CACHE_LIST);
+    await RedisCache.deletePattern(CACHE_LIST + '*');
 
     res.status(201).json(new ApiResponse(201, banner, 'Banner created successfully'));
 });
@@ -44,7 +44,7 @@ export const updateBanner = catchAsync(async (req, res) => {
 
     const banner = await bannerService.update(req.params.id, req.body);
     await Promise.all([
-        RedisCache.delete(CACHE_LIST),
+        RedisCache.deletePattern(CACHE_LIST + '*'),
         RedisCache.delete(`${CACHE_SINGLE}${req.params.id}`),
     ]);
 
@@ -54,7 +54,7 @@ export const updateBanner = catchAsync(async (req, res) => {
 export const deleteBanner = catchAsync(async (req, res) => {
     await bannerService.remove(req.params.id);
     await Promise.all([
-        RedisCache.delete(CACHE_LIST),
+        RedisCache.deletePattern(CACHE_LIST + '*'),
         RedisCache.delete(`${CACHE_SINGLE}${req.params.id}`),
     ]);
 
@@ -64,7 +64,7 @@ export const deleteBanner = catchAsync(async (req, res) => {
 export const toggleBanner = catchAsync(async (req, res) => {
     const banner = await bannerService.toggle(req.params.id);
     await Promise.all([
-        RedisCache.delete(CACHE_LIST),
+        RedisCache.deletePattern(CACHE_LIST + '*'),
         RedisCache.delete(`${CACHE_SINGLE}${req.params.id}`),
     ]);
 
