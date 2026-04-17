@@ -839,6 +839,7 @@ class ProductController {
       next(error);
     }
   }
+
   static async createProduct(req, res, next) {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -986,6 +987,7 @@ class ProductController {
         RedisCache.deletePattern("products:vendor:*"),
         RedisCache.deletePattern("products:subcat:*"),
         RedisCache.deletePattern("products:*"), // optional full clear
+        RedisCache.deletePattern(`products:cat:*`),
       ]);
       res.status(201).json({
         status: "success",
@@ -1001,7 +1003,6 @@ class ProductController {
       next(err);
     }
   }
-
   // UPDATE PRODUCT
   static async updateProduct(req, res, next) {
     try {
@@ -1067,6 +1068,7 @@ class ProductController {
         RedisCache.deletePattern("products:subcat:*"),
         RedisCache.deletePattern("products:*"), // optional full clear
         RedisCache.delete(`product:v1:${id}`),
+        RedisCache.deletePattern(`products:cat:*`),
       ]);
       res.status(200).json({
         status: "success",
@@ -1118,7 +1120,7 @@ class ProductController {
         throw new APIError("Product not found", 404);
       }
 
-      // 🔥 FIX: remove invalid geo data
+      // FIX: remove invalid geo data
       if (
         product.vendorLocation &&
         (!product.vendorLocation.coordinates ||
@@ -1138,6 +1140,7 @@ class ProductController {
         RedisCache.deletePattern("products:subcat:*"),
         RedisCache.deletePattern("products:*"), // optional full clear
         RedisCache.delete(`product:v1:${id}`),
+        RedisCache.deletePattern(`products:cat:*`),
       ]);
 
       res.json({
@@ -1215,6 +1218,7 @@ class ProductController {
         RedisCache.deletePattern("products:subcat:*"),
         RedisCache.deletePattern("products:*"), // optional full clear
         RedisCache.delete(`product:v1:${id}`),
+        RedisCache.deletePattern(`products:cat:*`),
       ]);
       res.json({
         status: "success",
@@ -1791,8 +1795,89 @@ class ProductController {
       next(err);
     }
   }
-}
 
+  static async getProductByCategory(req, res) {
+    try {
+      const { categoryId } = req.params;
+      const { page = 1, limit = 10, type } = req.query;
+
+      const cacheKey = `products:cat:${categoryId}:page:${page}:limit:${limit}:type:${type || "all"}`;
+
+      // 1. CHECK CACHE
+      const cachedData = await RedisCache.get(cacheKey);
+      if (cachedData) {
+        return res.json(JSON.parse(cachedData));
+      }
+
+      const skip = (page - 1) * limit;
+
+      const filter = { categoryId };
+
+      // 🔥 TYPE FILTER (same as before)
+      if (type) {
+        const variantIds = await Variant.find({
+          Type: { $regex: new RegExp(`^${type}$`, "i") },
+        }).select("_id");
+
+        filter.defaultVariantId = {
+          $in: variantIds.map((v) => v._id),
+        };
+      }
+
+      const products = await Product.find(filter)
+        .select(
+          "name images avgRating reviewCount slug properties minDiscount maxDiscount vendorId defaultVariantId",
+        )
+        .populate({
+          path: "vendorId",
+          select: "firstName lastName",
+        })
+        .populate({
+          path: "defaultVariantId",
+          select: "price discount Type",
+        })
+        .skip(skip)
+        .limit(Number(limit));
+
+      const formattedProducts = products.map((p) => ({
+        id: p._id,
+        name: p.name,
+        images: p.images,
+        avgRating: p.avgRating,
+        reviewCount: p.reviewCount,
+        slug: p.slug,
+        properties: p.properties,
+        minDiscount: p.minDiscount,
+        maxDiscount: p.maxDiscount,
+        vendor: {
+          firstName: p.vendorId?.firstName,
+          lastName: p.vendorId?.lastName,
+        },
+        price: p.defaultVariantId?.price ?? null,
+        discount: p.defaultVariantId?.discount ?? null,
+        type: p.defaultVariantId?.Type ?? null,
+      }));
+
+      const total = await Product.countDocuments(filter);
+
+      const response = {
+        success: true,
+        page: Number(page),
+        totalPages: Math.ceil(total / limit),
+        totalProducts: total,
+        products: formattedProducts,
+      };
+
+      // 2. SET CACHE
+      await RedisCache.set(cacheKey, JSON.stringify(response), 300);
+
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+}
+//demo
 export const addVariant = async (req, res) => {
   try {
     const { productId } = req.params;

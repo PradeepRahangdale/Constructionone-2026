@@ -79,7 +79,10 @@ router.get(
   requireAuth,
   ProductController.getProductVariants,
 );
-
+router.get(
+  "/products/category/:categoryId",
+  ProductController.getProductByCategory,
+);
 // DISABLE / ENABLE product (vendor only)
 
 router.patch(
