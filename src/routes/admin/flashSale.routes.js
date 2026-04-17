@@ -19,5 +19,5 @@ router.get("/", getAllFlashSales);
 router.get("/:id", getFlashSaleById);
 router.get("/:id/items", getFlashSaleItems);
 router.put("/:id/cancel", cancelFlashSale);
-router.put("/:id/item/:itemId", updateFlashSaleController);
+router.put("/:id", updateFlashSaleController);
 export default router;

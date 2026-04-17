@@ -160,93 +160,173 @@ export async function createFlashSale({
   }
 }
 
-export async function updateFlashSaleAndItem(flashSaleId, itemId, payload) {
-  const { startDateTime, endDateTime, flashDiscountPercent, allocatedStock } =
-    payload;
+// export async function updateFlashSaleAndItem(flashSaleId, payload) {
+//   const { startDateTime, endDateTime, flashDiscountPercent, allocatedStock } =
+//     payload;
+
+//   const sale = await FlashSale.findById(flashSaleId);
+//   if (!sale) throw new Error("Flash sale not found");
+
+//   if (payload.label || payload.moduleId || payload.vendorId) {
+//     throw new Error("label, moduleId, vendorId cannot be updated");
+//   }
+
+//   const start = startDateTime ? new Date(startDateTime) : sale.startDateTime;
+
+//   const end = endDateTime ? new Date(endDateTime) : sale.endDateTime;
+
+//   if (start >= end) {
+//     throw new Error("startDateTime must be before endDateTime");
+//   }
+
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     await FlashSale.findByIdAndUpdate(
+//       flashSaleId,
+//       {
+//         startDateTime: start,
+//         endDateTime: end,
+//       },
+//       { session },
+//     );
+
+//     const item = await FlashSaleItem.findOne({
+//       _id: itemId,
+//       flashSaleId,
+//     }).session(session);
+
+//     if (!item) throw new Error("Item not found");
+
+//     const variant = await Variant.findById(item.variantId)
+//       .select("price stock")
+//       .lean();
+
+//     // discount
+//     if (flashDiscountPercent !== undefined) {
+//       item.flashDiscountPercent = flashDiscountPercent;
+
+//       item.flashPrice = Math.max(
+//         Math.round(
+//           variant.price - (variant.price * flashDiscountPercent) / 100,
+//         ),
+//         1,
+//       );
+//     }
+
+//     // stock
+//     if (allocatedStock !== undefined) {
+//       if (allocatedStock > variant.stock) {
+//         throw new Error("Allocated stock exceeds available stock");
+//       }
+
+//       if (allocatedStock < item.sold) {
+//         throw new Error("Allocated stock cannot be less than sold");
+//       }
+
+//       item.allocatedStock = allocatedStock;
+//     }
+
+//     await item.save({ session });
+
+//     await session.commitTransaction();
+
+//     // ✅ Redis update
+//     const ttlSecs = Math.max(Math.ceil((end - new Date()) / 1000), 60);
+
+//     await redis.set(
+//       `flash:stock:${item._id}`,
+//       item.allocatedStock,
+//       "EX",
+//       ttlSecs,
+//     );
+
+//     await invalidatePriceCache(item.variantId);
+
+//     return {
+//       success: true,
+//       message: "Flash sale & item updated successfully",
+//     };
+//   } catch (err) {
+//     await session.abortTransaction();
+//     throw err;
+//   } finally {
+//     session.endSession();
+//   }
+// }
+
+export async function updateFlashSale(flashSaleId, payload) {
+  const { itemUpdates = [], startDateTime, endDateTime } = payload;
 
   const sale = await FlashSale.findById(flashSaleId);
   if (!sale) throw new Error("Flash sale not found");
 
   if (payload.label || payload.moduleId || payload.vendorId) {
-    throw new Error("label, moduleId, vendorId cannot be updated");
-  }
-
-  const start = startDateTime ? new Date(startDateTime) : sale.startDateTime;
-
-  const end = endDateTime ? new Date(endDateTime) : sale.endDateTime;
-
-  if (start >= end) {
-    throw new Error("startDateTime must be before endDateTime");
+    throw new Error("Not allowed to update restricted fields");
   }
 
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
+    const start = startDateTime ? new Date(startDateTime) : sale.startDateTime;
+
+    const end = endDateTime ? new Date(endDateTime) : sale.endDateTime;
+
+    if (start >= end) {
+      throw new Error("Invalid date range");
+    }
+
     await FlashSale.findByIdAndUpdate(
       flashSaleId,
-      {
-        startDateTime: start,
-        endDateTime: end,
-      },
+      { startDateTime: start, endDateTime: end },
       { session },
     );
 
-    const item = await FlashSaleItem.findOne({
-      _id: itemId,
-      flashSaleId,
-    }).session(session);
+    for (const upd of itemUpdates) {
+      const item = await FlashSaleItem.findOne({
+        _id: upd.itemId,
+        flashSaleId,
+      }).session(session);
 
-    if (!item) throw new Error("Item not found");
+      if (!item) throw new Error(`Item not found: ${upd.itemId}`);
 
-    const variant = await Variant.findById(item.variantId)
-      .select("price stock")
-      .lean();
+      const variant = await Variant.findById(item.variantId)
+        .select("price stock")
+        .lean();
 
-    // discount
-    if (flashDiscountPercent !== undefined) {
-      item.flashDiscountPercent = flashDiscountPercent;
+      if (upd.flashDiscountPercent !== undefined) {
+        item.flashDiscountPercent = upd.flashDiscountPercent;
 
-      item.flashPrice = Math.max(
-        Math.round(
-          variant.price - (variant.price * flashDiscountPercent) / 100,
-        ),
-        1,
-      );
-    }
-
-    // stock
-    if (allocatedStock !== undefined) {
-      if (allocatedStock > variant.stock) {
-        throw new Error("Allocated stock exceeds available stock");
+        item.flashPrice = Math.max(
+          Math.round(
+            variant.price - (variant.price * upd.flashDiscountPercent) / 100,
+          ),
+          1,
+        );
       }
 
-      if (allocatedStock < item.sold) {
-        throw new Error("Allocated stock cannot be less than sold");
+      if (upd.allocatedStock !== undefined) {
+        if (upd.allocatedStock > variant.stock) {
+          throw new Error("Stock exceeded");
+        }
+
+        if (upd.allocatedStock < item.sold) {
+          throw new Error("Invalid stock < sold");
+        }
+
+        item.allocatedStock = upd.allocatedStock;
       }
 
-      item.allocatedStock = allocatedStock;
+      await item.save({ session });
     }
-
-    await item.save({ session });
 
     await session.commitTransaction();
 
-    // ✅ Redis update
-    const ttlSecs = Math.max(Math.ceil((end - new Date()) / 1000), 60);
-
-    await redis.set(
-      `flash:stock:${item._id}`,
-      item.allocatedStock,
-      "EX",
-      ttlSecs,
-    );
-
-    await invalidatePriceCache(item.variantId);
-
     return {
       success: true,
-      message: "Flash sale & item updated successfully",
+      message: "Flash sale updated successfully",
     };
   } catch (err) {
     await session.abortTransaction();
@@ -255,6 +335,7 @@ export async function updateFlashSaleAndItem(flashSaleId, itemId, payload) {
     session.endSession();
   }
 }
+
 export async function cancelFlashSale(flashSaleId) {
   const sale = await FlashSale.findById(flashSaleId);
   if (!sale) throw new Error("Flash sale not found");

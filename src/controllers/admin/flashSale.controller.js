@@ -38,13 +38,8 @@ export const createFlashSale = catchAsync(async (req, res, next) => {
 });
 
 export const updateFlashSaleController = catchAsync(async (req, res) => {
-  const { id, itemId } = req.params;
-  const result = await FlashSaleService.updateFlashSaleAndItem(
-    id,
-    itemId,
-    req.body,
-  );
-
+  const { id } = req.params;
+  const result = await FlashSaleService.updateFlashSale(id, req.body);
   res
     .status(200)
     .json(new ApiResponse(200, result, "Flash sale updated successfully"));

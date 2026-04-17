@@ -3,6 +3,7 @@ import vendorWalletModel from "../../models/vendorShop/vendorWallet.model.js";
 import vendorWithdrawalBalanceModel from "../../models/vendorShop/vendorWithdrawalBalance.model.js";
 import mongoose from "mongoose";
 import PDFDocument from "pdfkit";
+import adminTransaction from "../../models/admin/adminTransaction.model.js";
 
 export const requestWithdraw = async (req, res) => {
   const vendorId = req.user.id;
@@ -100,6 +101,10 @@ export const getAllWithdrawalRequests = async (req, res) => {
     const withdrawals = await vendorWithdrawalBalanceModel
       .find(query)
       .populate("vendorId", "firstName lastName phoneNumber email ")
+      .populate(
+        "bankAccountId",
+        "accountHolderName accountNumber accountType ifscCode bankName upiId",
+      )
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -126,9 +131,13 @@ export const approveWithdraw = async (req, res) => {
 
   try {
     session.startTransaction();
-
     const { withdrawalId } = req.params;
+    const { transactionId } = req.body;
 
+    if (!transactionId) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: "Transaction ID is required" });
+    }
     const withdrawal = await vendorWithdrawalBalanceModel
       .findById(withdrawalId)
       .session(session);
@@ -136,9 +145,9 @@ export const approveWithdraw = async (req, res) => {
     const wallet = await vendorWalletModel
       .findOne({ vendorId: withdrawal.vendorId })
       .session(session);
-
     wallet.availableBalance -= withdrawal.amount;
-    wallet.totalBalance -= withdrawal.amount;
+    //ye baad me final dikhana hai jab vendor app done ho jayega
+    // wallet.totalBalance -= withdrawal.amount;
     await wallet.save({ session });
 
     withdrawal.status = "APPROVED";
@@ -147,11 +156,32 @@ export const approveWithdraw = async (req, res) => {
     await vendorTransactionModel.create(
       [
         {
-          vendorId: withdrawal.vendorId,
+          vendorId: withdrawal.vendorId?._id || withdrawal.vendorId,
           type: "WITHDRAWAL",
+          transactionId,
           amount: withdrawal.amount,
-          status: "COMPLETED",
-          description: "Withdrawal to bank",
+          status: "SUCCESS",
+          description: `₹${withdrawal.amount} withdrawn and credited to bank account}`,
+          bankAccountId: withdrawal.bankAccountId,
+          referenceId: withdrawal._id,
+        },
+      ],
+      { session },
+    );
+
+    await adminTransaction.create(
+      [
+        {
+          vendorId: withdrawal.vendorId?._id || withdrawal.vendorId,
+          transactionId,
+          type: "WITHDRAWAL",
+          status: "SUCCESS",
+          amount: withdrawal.amount,
+          description: `₹${withdrawal.amount} withdrawal approved`,
+          referenceId: withdrawal._id,
+          referenceModel: "Withdrawal",
+          bankAccountId: withdrawal.bankAccountId,
+          processedBy: req.user.id,
         },
       ],
       { session },
@@ -283,6 +313,110 @@ ${item.bankAccountId?.accountNumber || "-"}`;
     doc.end();
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+export const getAdminTransactionsHistory = async (req, res) => {
+  try {
+    const adminId = req.user.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const { type, status, vendorId, startDate, endDate } = req.query;
+
+    const filter = {};
+
+    if (type) filter.type = type;
+    if (status) filter.status = status;
+
+    if (vendorId) {
+      filter.vendorId = new mongoose.Types.ObjectId(vendorId);
+    }
+
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) filter.createdAt.$lte = new Date(endDate);
+    }
+
+    const transactions = await adminTransaction
+      .find(filter)
+      .populate("vendorId", "firstName lastName email phoneNumber")
+      .populate("bankAccountId", "accountHolderName accountNumber bankName")
+      .populate("processedBy", "name email")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await adminTransaction.countDocuments(filter);
+
+    const data = transactions.map((tx) => ({
+      id: tx._id,
+
+      vendor: tx.vendorId
+        ? {
+            id: tx.vendorId._id,
+            name: `${tx.vendorId.firstName} ${tx.vendorId.lastName}`,
+            email: tx.vendorId.email,
+            phone: tx.vendorId.phoneNumber,
+          }
+        : null,
+
+      type: tx.type,
+      status: tx.status,
+
+      amount: tx.amount,
+      fee: tx.fee || 0,
+      netAmount: tx.netAmount || tx.amount,
+
+      description: tx.description,
+
+      referenceId: tx.referenceId,
+      referenceModel: tx.referenceModel,
+
+      bank: tx.bankAccountId
+        ? {
+            accountHolderName: tx.bankAccountId.accountHolderName,
+            accountNumber: `****${tx.bankAccountId.accountNumber?.slice(-4)}`,
+            bankName: tx.bankAccountId.bankName,
+          }
+        : null,
+
+      balanceBefore: tx.balanceBefore,
+      balanceAfter: tx.balanceAfter,
+
+      processedBy: tx.processedBy
+        ? {
+            id: tx.processedBy._id,
+            name: tx.processedBy.name,
+            email: tx.processedBy.email,
+          }
+        : null,
+
+      createdAt: tx.createdAt,
+
+      displayText: `₹${tx.amount} sent to ${
+        tx.vendorId
+          ? `${tx.vendorId.firstName} ${tx.vendorId.lastName}`
+          : "Unknown Vendor"
+      }`,
+    }));
+
+    res.json({
+      success: true,
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 

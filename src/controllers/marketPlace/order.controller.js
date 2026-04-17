@@ -1408,7 +1408,6 @@ export const checkoutPreview = async (req, res) => {
         availableDeliveryOptions: options,
       });
     }
-
     return res.json({
       success: true,
       data: result,
@@ -1475,6 +1474,7 @@ export const calculateDelivery = async (req, res) => {
     }
 
     const vendorIds = vendors.map((v) => v.vendorId);
+    
     const vendorDocs = await VendorCompany.find({
       _id: { $in: vendorIds },
     });

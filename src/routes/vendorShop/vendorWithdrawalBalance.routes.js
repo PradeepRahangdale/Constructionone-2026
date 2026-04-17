@@ -6,6 +6,7 @@ import {
   rejectWithdraw,
   getAllWithdrawalRequests,
   downloadStatementPDF,
+  getAdminTransactionsHistory,
 } from "../../controllers/vendorShop/vendorWithdrawalBalance.controller.js";
 const router = Router();
 
@@ -15,6 +16,11 @@ router.get("/statement/pdf", vendorMiddleware, downloadStatementPDF);
 
 //admin - API'S
 router.get("/withdrawals", adminMiddleware, getAllWithdrawalRequests);
+router.get(
+  "/transactions/history",
+  adminMiddleware,
+  getAdminTransactionsHistory,
+);
 router.patch(
   "/withdrawals/approve/:withdrawalId",
   adminMiddleware,

@@ -331,6 +331,7 @@ export const getAllTransactionHistory = async (req, res) => {
 
     const transactions = await vendorTransactionModel
       .find({ vendorId })
+      .populate("bankAccountId", "accountNumber")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
