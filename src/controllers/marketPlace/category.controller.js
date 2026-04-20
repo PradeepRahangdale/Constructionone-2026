@@ -1,6 +1,7 @@
 import {
   getCategoryTreeService,
   getCategoryTreeServiceForAdmin,
+  getAllCategoriesService,
 } from "../../services/category.service.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 
@@ -8,7 +9,6 @@ import { ApiResponse } from "../../utils/ApiResponse.js";
 export const getCategoryTree = async (req, res, next) => {
   try {
     const categoryTree = await getCategoryTreeService();
-
     return res
       .status(200)
       .json(
@@ -17,6 +17,20 @@ export const getCategoryTree = async (req, res, next) => {
           categoryTree,
           "Category tree fetched successfully",
         ),
+      );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAllCategories = async (req, res, next) => {
+  try {
+    const categories = await getAllCategoriesService(req.query);
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, categories, "Categories fetched successfully"),
       );
   } catch (error) {
     next(error);

@@ -17,6 +17,7 @@ import adminOrderRoutes from "./order.routes.js";
 import globalSearchRoutes from "./globalSearch.routes.js";
 import adminReviewRoutes from "./review.routes.js";
 import trendingRoutes from "./trending.routes.js";
+import productType from "./productType.routes.js";
 // import countryRoute from "./country.routes.js";
 
 const router = Router();
@@ -42,5 +43,6 @@ router.use("/tax", taxRoutes);
 router.use("/admin/order", adminOrderRoutes);
 router.use("/user", globalSearchRoutes);
 router.use("/admin/reviews", adminReviewRoutes);
+router.use("/product-types", productType);
 
 export default router;

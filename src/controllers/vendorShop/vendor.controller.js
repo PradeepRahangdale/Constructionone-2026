@@ -851,7 +851,6 @@ export const logoutVendor = async (req, res, next) => {
 
 export const upsertVendorCompanyInfo = async (req, res) => {
   try {
-    // ✅ Parse bankDetails FIRST
     if (req.body.bankDetails && typeof req.body.bankDetails === "string") {
       try {
         req.body.bankDetails = JSON.parse(req.body.bankDetails);
@@ -865,7 +864,6 @@ export const upsertVendorCompanyInfo = async (req, res) => {
 
     const { vendorId, bankDetails, ...companyData } = req.body;
 
-    // 📁 Handle Files
     if (req.files) {
       if (req.files.shopImages) {
         companyData.shopImages = req.files.shopImages.map(
@@ -880,13 +878,11 @@ export const upsertVendorCompanyInfo = async (req, res) => {
       }
     }
 
-    // 🏢 Create Company
     const company = await VendorCompany.create({
       vendorId,
       ...companyData,
     });
 
-    // 🏦 Create Bank (if provided)
     if (bankDetails) {
       const {
         accountHolderName,
@@ -898,7 +894,6 @@ export const upsertVendorCompanyInfo = async (req, res) => {
         upiId,
       } = bankDetails;
 
-      //  Safety check (extra layer)
       if (accountNumber !== confirmAccountNumber) {
         return res.status(400).json({
           success: false,
@@ -906,16 +901,13 @@ export const upsertVendorCompanyInfo = async (req, res) => {
         });
       }
 
-      // 📄 Cancelled cheque
       let cancelledChequeUrl = "";
       if (req.files?.cancelledCheque) {
         cancelledChequeUrl = req.files.cancelledCheque[0].location;
       }
 
-      // 🔍 Check existing default bank
       const existingBank = await VendorBankAccount.findOne({ vendorId });
 
-      // 💾 Save bank (NO confirmAccountNumber in DB)
       await VendorBankAccount.create({
         vendorId,
         accountHolderName,
@@ -929,7 +921,6 @@ export const upsertVendorCompanyInfo = async (req, res) => {
       });
     }
 
-    // 👤 Update Profile
     await VendorProfile.findByIdAndUpdate(vendorId, {
       isProfileCompleted: true,
     });
@@ -1130,6 +1121,158 @@ export const getAllVendors = async (req, res) => {
     });
   } catch (error) {
     console.error("Get Vendors Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+//users get all vendor company vadetails with filter and pagination for admin panel
+export const getAllVendorCompany = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const skip = (page - 1) * limit;
+
+    const { search, sort } = req.query;
+
+    const cacheKey = `vendorCompany:all:v2:${JSON.stringify({
+      page,
+      limit,
+      search,
+      sort,
+    })}`;
+
+    const cached = await RedisCache.get(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    const safeSearch = search ? escapeRegex(search) : null;
+
+    // ------------------------------------------------
+    // Step 1: Only verified + enabled vendors allowed
+    // ------------------------------------------------
+    const allowedVendors = await VendorProfile.find({
+      isAdminVerified: true,
+      disable: false,
+    }).select("_id");
+
+    const vendorIds = allowedVendors.map((v) => v._id);
+
+    if (!vendorIds.length) {
+      return res.status(200).json({
+        success: true,
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+        data: [],
+      });
+    }
+
+    // ------------------------------------------------
+    // Step 2: VendorCompany Query
+    // ------------------------------------------------
+    const query = {
+      vendorId: { $in: vendorIds },
+    };
+
+    if (safeSearch) {
+      query.$or = [
+        { companyName: { $regex: safeSearch, $options: "i" } },
+        { companyType: { $regex: safeSearch, $options: "i" } },
+        { businessCategory: { $regex: safeSearch, $options: "i" } },
+        {
+          "businessAddress.address": {
+            $regex: safeSearch,
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    // ------------------------------------------------
+    // Step 3: Sorting
+    // ------------------------------------------------
+    let sortQuery = { createdAt: -1 };
+
+    if (sort === "oldest") {
+      sortQuery = { createdAt: 1 };
+    }
+
+    // ------------------------------------------------
+    // Step 4: Fetch Data
+    // ------------------------------------------------
+    const [vendorCompanies, total] = await Promise.all([
+      VendorCompany.find(query)
+        .populate({
+          path: "vendorId",
+          select:
+            "firstName lastName email phoneNumber isAdminVerified disable totalReviews",
+        })
+        .sort(sortQuery)
+        .skip(skip)
+        .limit(limit),
+
+      VendorCompany.countDocuments(query),
+    ]);
+
+    // ------------------------------------------------
+    // Step 5: Response
+    // ------------------------------------------------
+    const response = {
+      success: true,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+      data: vendorCompanies.map((v) => ({
+        _id: v._id,
+
+        shopName: v.companyName,
+        companyType: v.companyType,
+        businessCategory: v.businessCategory,
+        badges: v.badges || [],
+        shopImages: v.shopImages || [],
+        certificates: v.certificates || [],
+        totalReviews: v.vendorId?.totalReviews || 0,
+
+        vendor: {
+          _id: v.vendorId?._id,
+          name: `${v.vendorId?.firstName || ""} ${
+            v.vendorId?.lastName || ""
+          }`.trim(),
+          email: v.vendorId?.email,
+          phoneNumber: v.vendorId?.phoneNumber,
+
+          // always true/false based on allowed filter
+          isAdminVerified: v.vendorId?.isAdminVerified,
+          isDisabled: v.vendorId?.disable,
+        },
+
+        location: {
+          address: v.businessAddress?.address || "",
+        },
+
+        createdAt: v.createdAt,
+        updatedAt: v.updatedAt,
+      })),
+    };
+
+    await RedisCache.set(cacheKey, response);
+
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error("Get All VendorCompany Error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message,
@@ -1404,6 +1547,7 @@ export const verifyVendorByAdmin = async (req, res, next) => {
       RedisCache.delete(`vendor:${vendorId}`), // single vendor
       RedisCache.delete(`vendor:id:v1:${vendorId}`), // vendor detail cache
       RedisCache.deletePattern("vendors:all:v1:*"), // all list caches
+      RedisCache.deletePattern("vendorCompany:all:v2:*"), // all list caches
     ]);
     return res.status(200).json({
       success: true,
@@ -1527,6 +1671,7 @@ export const disableVendorStatus = async (req, res, next) => {
       RedisCache.delete(`vendor:${vendorId}`), // single vendor
       RedisCache.delete(`vendor:id:v1:${vendorId}`), // vendor detail cache
       RedisCache.deletePattern("vendors:all:v1:*"), // all list caches
+      RedisCache.deletePattern("vendorCompany:all:v2:*"), // all list caches
     ]);
     return res.status(200).json({
       success: true,
@@ -2323,7 +2468,6 @@ import VendorWallet from "../../models/vendorShop/vendorWallet.model.js";
 //     });
 //   }
 // };
-
 export const getVendorById = async (req, res) => {
   try {
     const { vendorId } = req.params;
@@ -2447,6 +2591,149 @@ export const getVendorById = async (req, res) => {
     return res.status(400).json({
       success: false,
       message: "Invalid vendor ID",
+    });
+  }
+};
+
+export const getVendorByIdForUser = async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+
+    const cacheKey = `vendor:id:v3:${vendorId}`;
+    const cached = await RedisCache.get(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const vendor = await VendorCompany.findOne({ vendorId })
+      .populate({
+        path: "vendorId",
+        select: "-password -phoneOtp -aadharOtp -__v",
+      })
+      .select("-__v") // __v remove
+      .lean();
+
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: "Vendor not found",
+      });
+    }
+
+    delete vendor.accountHolderName;
+    delete vendor.bankName;
+    delete vendor.accountNumber;
+    delete vendor.confirmAccountNumber;
+    delete vendor.ifscCode;
+    delete vendor.accountType;
+    delete vendor.upiId;
+    delete vendor.cancelledCheque;
+    delete vendor.serviceArea;
+
+    // analytics remove
+    // topProducts remove
+
+    const response = {
+      success: true,
+      data: vendor,
+    };
+
+    await RedisCache.set(cacheKey, response);
+
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error("Get Vendor Error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: "Invalid vendor ID",
+    });
+  }
+};
+
+export const getSimilarCompanies = async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+
+    // fixed limit = 10
+    const limit = 10;
+
+    const cacheKey = `similarCompanies:${vendorId}:limit:${limit}`;
+    const cached = await RedisCache.get(cacheKey);
+
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    // Current vendor company find
+    const currentCompany = await VendorCompany.findOne({ vendorId }).select(
+      "businessCategory companyType vendorId",
+    );
+
+    if (!currentCompany) {
+      return res.status(404).json({
+        success: false,
+        message: "Vendor company not found",
+      });
+    }
+
+    // Similar companies based on businessCategory + companyType
+    const similarCompanies = await VendorCompany.find({
+      _id: { $ne: currentCompany._id },
+      vendorId: { $ne: vendorId },
+      businessCategory: currentCompany.businessCategory,
+      companyType: currentCompany.companyType,
+    })
+      .populate({
+        path: "vendorId",
+        match: {
+          isAdminVerified: true,
+          disable: false,
+        },
+        select: "firstName lastName email phoneNumber isAdminVerified disable",
+      })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    // null populated vendor remove
+    const filteredCompanies = similarCompanies.filter((item) => item.vendorId);
+
+    const response = {
+      success: true,
+      total: filteredCompanies.length,
+      data: filteredCompanies.map((v) => ({
+        _id: v._id,
+        shopName: v.companyName,
+        companyType: v.companyType,
+        businessCategory: v.businessCategory,
+        badges: v.badges || [],
+        shopImages: v.shopImages || [],
+
+        vendor: {
+          _id: v.vendorId?._id,
+          name: `${v.vendorId?.firstName || ""} ${
+            v.vendorId?.lastName || ""
+          }`.trim(),
+          email: v.vendorId?.email,
+          phoneNumber: v.vendorId?.phoneNumber,
+        },
+
+        location: {
+          address: v.businessAddress?.address || "",
+        },
+
+        createdAt: v.createdAt,
+      })),
+    };
+
+    await RedisCache.set(cacheKey, response);
+
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error("Get Similar Companies Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 };

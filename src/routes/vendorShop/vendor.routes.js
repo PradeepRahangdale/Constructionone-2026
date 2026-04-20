@@ -13,6 +13,7 @@ import {
   logoutVendor,
   upsertVendorCompanyInfo,
   getAllVendors,
+  getAllVendorCompany,
   getUnverifiedVendors,
   verifyVendorByAdmin,
   disableVendorStatus,
@@ -26,6 +27,8 @@ import {
   refreshTokenHandler,
   getProductsByVendorAndCategory,
   getAllVendorsViaModuleId,
+  getVendorByIdForUser,
+  getSimilarCompanies,
 } from "../../controllers/vendorShop/vendor.controller.js";
 import {
   adminMiddleware,
@@ -86,6 +89,7 @@ router.post(
   upsertVendorCompanyInfo,
 );
 
+router.get("/vendorshops", authMiddleware, getAllVendorCompany);
 //updates in shop
 router.put(
   "/addshop/:vendorId",
@@ -105,6 +109,8 @@ router.get("/module/:moduleId", adminMiddleware, getAllVendorsViaModuleId);
 router.post("/admin-varify/:vendorId", adminMiddleware, verifyVendorByAdmin); //vendor varification
 router.patch("/:vendorId", adminMiddleware, disableVendorStatus); //eneble and disable vendor profile
 router.get("/:vendorId", adminMiddleware, getVendorById);
+router.get("/user/:vendorId", authMiddleware, getVendorByIdForUser);
+router.get("/user/:vendorId/similar", authMiddleware, getSimilarCompanies);
 router.post("/badge/:vendorId", adminMiddleware, addMultipleBadgesByAdmin);
 router.post(
   "/remove-badge/:vendorId",

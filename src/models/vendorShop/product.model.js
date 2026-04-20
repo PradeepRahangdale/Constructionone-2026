@@ -43,13 +43,29 @@ const productSchema = new mongoose.Schema(
       index: true,
     },
 
-    subcategoryId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Subcategory",
-      required: true,
-      index: true,
-    },
+    // subcategoryId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "Subcategory",
+    //   required: true,
+    //   index: true,
+    // },
 
+    subcategoryId: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Subcategory",
+        required: true,
+      },
+    ],
+
+    // multiple product types
+    productTypeId: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ProductType",
+        required: true,
+      },
+    ],
     brandId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Brand",
@@ -110,24 +126,17 @@ const productSchema = new mongoose.Schema(
       type: String,
     },
 
-    // city: [
-    //   {
-    //     type: mongoose.Schema.Types.ObjectId,
-    //     ref: "City",
-    //   },
-    // ],
-
-    // state: [
-    //   {
-    //     type: mongoose.Schema.Types.ObjectId,
-    //     ref: "State",
-    //   },
-    // ],
-
     deliveryCharges: {
       type: String,
-      enum: ["free", "fixedCharge", "distanceAndWeightBased", "customerPickup"],
+      enum: [
+        "free",
+        "fixedCharge",
+        "distanceAndWeightBased",
+        "customerPickup",
+        "distanceWeightVolumeBased",
+      ],
       trim: true,
+      default: "distanceWeightVolumeBased",
     },
 
     shippingCharges: {
@@ -174,6 +183,7 @@ const productSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
     metaData: {
       title: { type: String, default: "Product" },
       description: { type: String, default: "Product" },
@@ -211,7 +221,6 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "vendorProfile",
@@ -227,7 +236,6 @@ const productSchema = new mongoose.Schema(
       },
     },
 
-    //asgr
     properties: {
       type: [
         {
@@ -251,7 +259,7 @@ const productSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ["DRAFT", "ACTIVE", "OUT_OF_STOCK"],
-      default: "DRAFT",
+      default: "ACTIVE",
     },
   },
   { timestamps: true },

@@ -10,7 +10,7 @@ import {
   registerSchemaSubAdmin,
 } from "../../validations/auth/auth.validation.js"; // Reusing auth schemas for now, or define specific admin ones if different
 import { PERMISSIONS } from "../../utils/permissions.js";
-
+import bcrypt from "bcryptjs";
 // Register New Admin (Protected: Only an existing ADMIN can create another ADMIN)
 export const registerAdmin = catchAsync(async (req, res, next) => {
   // Validate Input
@@ -99,6 +99,7 @@ export const loginAdmin = catchAsync(async (req, res, next) => {
           lastName: user.lastName,
           email: user.email,
           role: user.role,
+          permissions: user.permissions,
         },
       },
       "logged in successfully",
@@ -108,16 +109,18 @@ export const loginAdmin = catchAsync(async (req, res, next) => {
 
 // Get Own Admin Profile
 export const getAdminMe = catchAsync(async (req, res, next) => {
-    const admin = await User.findById(req.user.id).lean();
-    if (!admin) return next(new APIError(404, 'Admin not found'));
+  const admin = await User.findById(req.user.id).lean();
+  if (!admin) return next(new APIError(404, "Admin not found"));
 
-    // Remove internal/sensitive fields (password is already select:false)
-    admin.id = admin._id;
-    delete admin._id;
-    delete admin.__v;
+  // Remove internal/sensitive fields (password is already select:false)
+  admin.id = admin._id;
+  delete admin._id;
+  delete admin.__v;
 
-    res.status(200).json(
-        new ApiResponse(200, { admin }, 'Admin profile fetched successfully')
+  res
+    .status(200)
+    .json(
+      new ApiResponse(200, { admin }, "Admin profile fetched successfully"),
     );
 });
 
@@ -278,6 +281,143 @@ export const createSubAdmin = catchAsync(async (req, res, next) => {
     },
   });
 });
+//adminUpdate sub-admin
+export const updateSubAdmin = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+
+  // 1. Check if subadmin exists
+  const subAdmin = await User.findById(id);
+
+  if (!subAdmin) {
+    return next(new APIError(404, "SubAdmin not found"));
+  }
+
+  if (subAdmin.role !== "SUB_ADMIN") {
+    return next(new APIError(400, "User is not a SubAdmin"));
+  }
+
+  // 2. Role update allow nahi hoga
+  const input = { ...req.body };
+  delete input.role;
+
+  const { firstName, lastName, email, phone, password, permissions } = input;
+
+  // 3. Email / Phone duplicate check
+  if (email || phone) {
+    const existingUser = await User.findOne({
+      _id: { $ne: id },
+      $or: [...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])],
+    });
+
+    if (existingUser) {
+      return next(new APIError(400, "Email or Phone already exists"));
+    }
+  }
+
+  // 4. Password hash if provided
+  if (password) {
+    const salt = await bcrypt.genSalt(10);
+    input.password = await bcrypt.hash(password, salt);
+  }
+
+  // 5. Update SubAdmin
+  const updatedSubAdmin = await User.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        ...(firstName && { firstName }),
+        ...(lastName && { lastName }),
+        ...(email && { email }),
+        ...(phone && { phone }),
+        ...(permissions && { permissions }),
+        ...(password && { password: input.password }),
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+    },
+  ).select("-password");
+
+  res.status(200).json({
+    success: true,
+    message: "SubAdmin updated successfully",
+    data: {
+      id: updatedSubAdmin._id,
+      firstName: updatedSubAdmin.firstName,
+      lastName: updatedSubAdmin.lastName,
+      email: updatedSubAdmin.email,
+      phone: updatedSubAdmin.phone,
+      role: updatedSubAdmin.role,
+      permissions: updatedSubAdmin.permissions,
+    },
+  });
+});
+
+//subAdmin update profile self
+export const updateSubAdminProfile = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+
+  // 1. Check if subadmin exists
+  const subAdmin = await User.findById(id);
+
+  if (!subAdmin) {
+    return next(new APIError(404, "SubAdmin not found"));
+  }
+
+  if (subAdmin.role !== "SUB_ADMIN") {
+    return next(new APIError(400, "User is not a SubAdmin"));
+  }
+
+  // 2. Only allow these fields
+  const { firstName, lastName, email, phone } = req.body;
+
+  // 3. Email / Phone duplicate check
+  if (email || phone) {
+    const existingUser = await User.findOne({
+      _id: { $ne: id },
+      $or: [
+        ...(email ? [{ email }] : []),
+        ...(phone ? [{ phone }] : []),
+      ],
+    });
+
+    if (existingUser) {
+      return next(new APIError(400, "Email or Phone already exists"));
+    }
+  }
+
+  // 4. Update SubAdmin
+  const updatedSubAdmin = await User.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        ...(firstName && { firstName }),
+        ...(lastName && { lastName }),
+        ...(email && { email }),
+        ...(phone && { phone }),
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+    }
+  ).select("-password");
+
+  res.status(200).json({
+    success: true,
+    message: "SubAdmin updated successfully",
+    data: {
+      id: updatedSubAdmin._id,
+      firstName: updatedSubAdmin.firstName,
+      lastName: updatedSubAdmin.lastName,
+      email: updatedSubAdmin.email,
+      phone: updatedSubAdmin.phone,
+      role: updatedSubAdmin.role,
+    },
+  });
+});
+
 // Get Own SubAdmin Profile
 export const getSubAdminMe = catchAsync(async (req, res) => {
   // req.user.id is set by auth middleware
@@ -363,31 +503,25 @@ export const getSubAdminById = catchAsync(async (req, res, next) => {
     .json(new ApiResponse(200, { subAdmin }, "SubAdmin fetched successfully"));
 });
 
-export const toggleSubAdmin = catchAsync(async (req, res, next) => {
+export const toggleSubAdmin = async (req, res, next) => {
   const id = req.params.id;
   const subAdmin = await User.findById(id);
 
   if (!subAdmin || subAdmin.role !== "SUB_ADMIN") {
-    return next(new APIError(404, "SubAdmin not found"));
+    throw new APIError(404, "SubAdmin not found");
   }
 
-  const updatedSubAdmin = await User.findByIdAndUpdate(id, {
-    isDisabled: { $toggle: true },
+  subAdmin.isDisabled = !subAdmin.isDisabled;
+  await subAdmin.save();
+  const status = subAdmin.isDisabled ? "disabled" : "enabled";
+  const message = `SubAdmin ${status} successfully`;
+  res.status(200).json({
+    message: message,
   });
-
-  res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        { subAdmin: updatedSubAdmin },
-        "SubAdmin status toggled successfully",
-      ),
-    );
-});
+};
 
 export const logoutSubAdmin = catchAsync(async (req, res, next) => {
-  const id = req.user.id; // Assuming the id is available in req.user
+  const id = req.user.id; //Assuming the id is available in req.user
 
   if (!id) {
     return next(new APIError(401, "Not authenticated"));
@@ -399,10 +533,33 @@ export const logoutSubAdmin = catchAsync(async (req, res, next) => {
 
   res.status(200).json(new ApiResponse(200, null, "Logged out successfully"));
 });
-//permission
-export const getAllPermissions = catchAsync(async (req, res) => {
+
+export const deleteSubAdmin = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const subAdmin = await User.findById(id);
+
+  if (!subAdmin) {
+    return next(new APIError(404, "SubAdmin not found"));
+  }
+
+  if (subAdmin.role !== "SUB_ADMIN") {
+    return next(new APIError(400, "User is not a SubAdmin"));
+  }
+
+  await User.findByIdAndDelete(id);
+
   res.status(200).json({
     success: true,
-    permissions: Object.values(PERMISSIONS),
+    message: "SubAdmin deleted successfully",
+  });
+});
+//permission
+export const getAllPermissions = catchAsync(async (req, res) => {
+  const permissions = PERMISSIONS.flatMap((permission) =>
+    permission.split("_"),
+  );
+  res.status(200).json({
+    success: true,
+    permissions,
   });
 });

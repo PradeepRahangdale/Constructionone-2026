@@ -13,7 +13,7 @@ export const requireRole = (...roles) => {
     next();
   };
 };
-export const requirePermission = (permission) => {
+export const requirePermission = (...permissions) => {
   return (req, res, next) => {
     // Check user exists
     if (!req.user) {
@@ -26,7 +26,10 @@ export const requirePermission = (permission) => {
     }
 
     // Check permissions safely
-    if (!req.user.permissions || !req.user.permissions.includes(permission)) {
+    if (
+      !req.user.permissions ||
+      !permissions.some((perm) => req.user.permissions.includes(perm))
+    ) {
       return next(
         new APIError(403, "You do not have permission to perform this action"),
       );

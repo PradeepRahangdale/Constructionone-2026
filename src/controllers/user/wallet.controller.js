@@ -9,23 +9,18 @@ import { APIError } from "../../middlewares/errorHandler.js";
 import crypto from "crypto";
 import redis from "../../config/redis.config.js";
 
-
 const getOrCreateWallet = async (userId, session = null) => {
   let wallet = await walletModel.findOne({ userId }).session(session);
 
   if (!wallet) {
-    const created = await walletModel.create(
-      [{ userId, balance: 0 }],
-      { session }
-    );
+    const created = await walletModel.create([{ userId, balance: 0 }], {
+      session,
+    });
     wallet = created[0];
   }
 
   return wallet;
 };
-
-
-
 
 export const getMyWallet = async (req, res, next) => {
   try {
@@ -44,21 +39,16 @@ export const getMyWallet = async (req, res, next) => {
 
     const result = {
       success: true,
-      data: wallet
+      data: wallet,
     };
 
     await redis.set(cacheKey, JSON.stringify(result), "EX", 300);
 
     return res.status(200).json(result);
-
   } catch (error) {
     next(error);
   }
 };
-
-
-
-
 
 export const createWalletTopup = async (req, res, next) => {
   const session = await mongoose.startSession();
@@ -84,7 +74,7 @@ export const createWalletTopup = async (req, res, next) => {
         throw new APIError(400, "Invalid top-up amount");
       }
     }
-    
+
     const order = await razorpay.orders.create({
       amount: amount * 100,
       currency: "INR",
@@ -92,18 +82,20 @@ export const createWalletTopup = async (req, res, next) => {
     });
 
     const [transaction] = await transactionModel.create(
-      [{
-        userId,
-        amount,
-        currency: "INR",
-        paymentGateway: "RAZORPAY",
-        razorpayOrderId: order.id,
-        status: "PENDING",
-        payType: "CREDIT",
-        walletPurpose: "TOPUP",
-        walletType,
-      }],
-      { session }
+      [
+        {
+          userId,
+          amount,
+          currency: "INR",
+          paymentGateway: "RAZORPAY",
+          razorpayOrderId: order.id,
+          status: "PENDING",
+          payType: "CREDIT",
+          walletPurpose: "TOPUP",
+          walletType,
+        },
+      ],
+      { session },
     );
 
     await session.commitTransaction();
@@ -120,9 +112,6 @@ export const createWalletTopup = async (req, res, next) => {
     next(error);
   }
 };
-
-
-
 
 export const verifyWalletTopup = async (req, res) => {
   const session = await mongoose.startSession();
@@ -198,11 +187,8 @@ export const verifyWalletTopup = async (req, res) => {
   }
 };
 
-
 export const getWalletHistory = async (req, res, next) => {
-
   try {
-
     const userId = req.user._id;
 
     const page = parseInt(req.query.page) || 1;
@@ -218,19 +204,30 @@ export const getWalletHistory = async (req, res, next) => {
     const filter = {
       userId,
       status: { $in: ["SUCCESS", "FAILED", "REFUNDED", "CREATED"] },
-      walletPurpose: {$in: ["TOPUP", "ORDER_PAYMENT", "BOOKING_PAYMENT", "REFUND" ,"ORDER_REFUND"]},
+      walletPurpose: {
+        $in: [
+          "TOPUP",
+          "ORDER_PAYMENT",
+          "BOOKING_PAYMENT",
+          "REFUND",
+          "ORDER_REFUND",
+        ],
+      },
       // $or:[
       //   {paymentGateway: "RAZORPAY" },
       //   {paymentMethod: "WALLET" }
       // ]
-      
-    }
+    };
 
     const [wallet, history] = await Promise.all([
       walletModel.findOne({ userId }),
-      transactionModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit)
-    ])
-    
+      transactionModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+    ]);
+
     const result = {
       success: true,
       wallet,
@@ -238,14 +235,13 @@ export const getWalletHistory = async (req, res, next) => {
       pagination: {
         page,
         limit,
-        total: history.length
-      }
-    }
+        total: history.length,
+      },
+    };
     await redis.set(cacheKey, JSON.stringify(result), "EX", 120);
 
     return res.status(200).json(result);
-
   } catch (error) {
     next(error);
   }
-}
+};

@@ -14,6 +14,9 @@ import {
   toggleSubAdmin,
   logoutSubAdmin,
   getSubAdminById,
+  updateSubAdmin,
+  deleteSubAdmin,
+  updateSubAdminProfile,
 } from "../../controllers/admin/admin.controller.js";
 import { getAdminDashboardData } from "../../controllers/admin/adminDashboard.controller.js";
 import { requireAuth } from "../../middlewares/auth.middleware.js";
@@ -35,7 +38,7 @@ router.use(requireAuth);
 router.get(
   "/dashboard",
   requireAuth,
-  requirePermission("VIEW_DASHBOARD"),
+  requirePermission("DASHBOARD"),
   getAdminDashboardData,
 );
 
@@ -49,6 +52,19 @@ router.put("/me", requireRole("ADMIN"), updateAdmin); // existing: UPDATE own pr
 
 //sub-admin creation
 router.post("/sub-admin", requireAuth, requireRole("ADMIN"), createSubAdmin);
+router.put("/sub-admin/:id", requireAuth, requireRole("ADMIN"), updateSubAdmin);
+router.put(
+  "/sub-admin/profile/:id",
+  requireAuth,
+  requireRole("SUB_ADMIN"),
+  updateSubAdminProfile,
+);
+router.delete(
+  "/sub-admin/:id",
+  requireAuth,
+  requireRole("ADMIN"),
+  deleteSubAdmin,
+);
 router.get("/sub-admin", requireAuth, requireRole("ADMIN"), getAllSubAdmin);
 router.get(
   "/sub-admin/me",

@@ -2,40 +2,40 @@ import mongoose from "mongoose";
 
 const variantSchema = new mongoose.Schema(
   {
-    moduleId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Module",
-      required: true,
-      index: true,
-    },
+    // moduleId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "Module",
+    //   required: true,
+    //   index: true,
+    // },
 
-    pcategoryId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "PCategory",
-      required: true,
-      index: true,
-    },
+    // pcategoryId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "PCategory",
+    //   required: true,
+    //   index: true,
+    // },
 
-    categoryId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Category",
-      required: true,
-      index: true,
-    },
+    // categoryId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "Category",
+    //   required: true,
+    //   index: true,
+    // },
 
-    subcategoryId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Subcategory",
-      required: true,
-      index: true,
-    },
+    // subcategoryId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "Subcategory",
+    //   required: true,
+    //   index: true,
+    // },
 
-    brandId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Brand",
-      required: true,
-      index: true,
-    },
+    // brandId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "Brand",
+    //   required: true,
+    //   index: true,
+    // },
 
     productId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -54,6 +54,7 @@ const variantSchema = new mongoose.Schema(
       min: 0,
       index: true,
     },
+
     discount: {
       type: Number,
       min: 0,
@@ -66,7 +67,6 @@ const variantSchema = new mongoose.Schema(
       default: 0,
       index: true,
     },
-
     size: {
       type: String,
       trim: true,
@@ -77,6 +77,7 @@ const variantSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+
     sold: {
       type: Number,
       default: 0,
@@ -90,12 +91,12 @@ const variantSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-
+    //minium order quantity -MOQ
     moq: {
       type: Number,
       default: 0,
     },
-
+    //kg
     packageWeight: {
       type: Number,
     },
@@ -103,7 +104,6 @@ const variantSchema = new mongoose.Schema(
     packageDimensions: {
       type: String,
     },
-
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

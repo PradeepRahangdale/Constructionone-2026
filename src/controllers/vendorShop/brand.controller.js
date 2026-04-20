@@ -143,7 +143,6 @@ class BrandController {
       const { vendorId } = req.params;
       const { search, type } = req.query;
 
-      // ✅ validation
       if (!vendorId) {
         return res.status(400).json({
           success: false,

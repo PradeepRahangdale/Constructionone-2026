@@ -94,7 +94,7 @@ export const getByPcategoryId = async (pcategoryId, query) => {
   const { search, isActive, sort } = query;
 
   const matchStage = {
-    pcategoryId: new mongoose.Types.ObjectId(pcategoryId), // 👈 fixed
+    pcategoryId: new mongoose.Types.ObjectId(pcategoryId), //  fixed
   };
 
   if (search) {
@@ -333,6 +333,123 @@ export const getCategoryTreeService = async () => {
 //   return await Pcategory.aggregate(pipeline);
 // };
 
+export const getAllCategoriesService = async (query) => {
+  const page = parseInt(query.page) || 1;
+  const limit = parseInt(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const categories = await Category.find({ isActive: true })
+    .select("name image")
+    .sort({ order: 1 })
+    .skip(skip)
+    .limit(limit);
+
+  const formatted = categories.map((cat) => ({
+    id: cat._id,
+    categoryName: cat.name,
+    img: cat.image || null,
+  }));
+
+  const finalData = [
+    {
+      id: "all",
+      categoryName: "All",
+      img: null,
+    },
+    ...formatted,
+  ];
+
+  return finalData;
+};
+// export const getCategoryTreeServiceForAdmin = async (query) => {
+//   const { isActive } = query;
+
+//   const pcategoryMatch = {};
+//   const categoryMatch = {};
+//   const subCategoryMatch = {};
+
+//   if (isActive === "true") {
+//     pcategoryMatch.isActive = true;
+//     categoryMatch.isActive = true;
+//     subCategoryMatch.isActive = true;
+//   } else if (isActive === "false") {
+//     pcategoryMatch.isActive = false;
+//     categoryMatch.isActive = false;
+//     subCategoryMatch.isActive = false;
+//   }
+
+//   const pipeline = [
+//     { $match: pcategoryMatch },
+//     { $sort: { order: 1 } },
+
+//     {
+//       $lookup: {
+//         from: "categories",
+//         localField: "_id",
+//         foreignField: "pcategoryId",
+//         as: "categories",
+//         pipeline: [
+//           { $match: categoryMatch },
+//           { $sort: { order: 1 } },
+//           // SubCategories
+//           {
+//             $lookup: {
+//               from: "subcategories",
+//               localField: "_id",
+//               foreignField: "categoryId",
+//               as: "subCategories",
+//               pipeline: [
+//                 { $match: subCategoryMatch },
+//                 { $sort: { order: 1 } },
+//                 {
+//                   $project: {
+//                     _id: 1,
+//                     name: 1,
+//                     slug: 1,
+//                     image: 1,
+//                     order: 1,
+//                     isActive: 1,
+//                     categoryId: 1,
+//                   },
+//                 },
+//               ],
+//             },
+//           },
+
+//           // 🔹 Category Projection
+//           {
+//             $project: {
+//               _id: 1,
+//               name: 1,
+//               slug: 1,
+//               image: 1,
+//               order: 1,
+//               isActive: 1,
+//               pcategoryId: 1,
+//               subCategories: 1,
+//             },
+//           },
+//         ],
+//       },
+//     },
+
+//     // 🔹 Parent Category Projection
+//     {
+//       $project: {
+//         _id: 1,
+//         name: 1,
+//         slug: 1,
+//         image: 1,
+//         moduleId: 1,
+//         order: 1,
+//         isActive: 1,
+//         categories: 1,
+//       },
+//     },
+//   ];
+
+//   return await Pcategory.aggregate(pipeline);
+// };
 
 export const getCategoryTreeServiceForAdmin = async (query) => {
   const { isActive } = query;
@@ -340,20 +457,36 @@ export const getCategoryTreeServiceForAdmin = async (query) => {
   const pcategoryMatch = {};
   const categoryMatch = {};
   const subCategoryMatch = {};
+  const productTypeMatch = {};
 
   if (isActive === "true") {
     pcategoryMatch.isActive = true;
     categoryMatch.isActive = true;
     subCategoryMatch.isActive = true;
+    productTypeMatch.status = true; // agar ProductType me status field hai
   } else if (isActive === "false") {
     pcategoryMatch.isActive = false;
     categoryMatch.isActive = false;
     subCategoryMatch.isActive = false;
+    productTypeMatch.status = false;
   }
 
   const pipeline = [
-    { $match: pcategoryMatch },
-    { $sort: { order: 1 } },
+    {
+      $match: pcategoryMatch,
+    },
+
+    {
+      $sort: {
+        order: 1,
+      },
+    },
+
+    /*
+    =================================
+    CATEGORY LOOKUP
+    =================================
+    */
 
     {
       $lookup: {
@@ -361,20 +494,86 @@ export const getCategoryTreeServiceForAdmin = async (query) => {
         localField: "_id",
         foreignField: "pcategoryId",
         as: "categories",
-        pipeline: [
-          { $match: categoryMatch },
-          { $sort: { order: 1 } },
 
-          // 🔹 SubCategories
+        pipeline: [
+          {
+            $match: categoryMatch,
+          },
+
+          {
+            $sort: {
+              order: 1,
+            },
+          },
+
+          /*
+          =================================
+          SUBCATEGORY LOOKUP
+          =================================
+          */
+
           {
             $lookup: {
               from: "subcategories",
               localField: "_id",
               foreignField: "categoryId",
               as: "subCategories",
+
               pipeline: [
-                { $match: subCategoryMatch },
-                { $sort: { order: 1 } },
+                {
+                  $match: subCategoryMatch,
+                },
+
+                {
+                  $sort: {
+                    order: 1,
+                  },
+                },
+
+                /*
+                =================================
+                PRODUCT TYPE LOOKUP
+                subcategoryId ke according
+                =================================
+                */
+
+                {
+                  $lookup: {
+                    from: "producttypes",
+                    localField: "_id",
+                    foreignField: "subcategoryId",
+                    as: "productTypes",
+
+                    pipeline: [
+                      {
+                        $match: productTypeMatch,
+                      },
+
+                      {
+                        $sort: {
+                          createdAt: -1,
+                        },
+                      },
+
+                      {
+                        $project: {
+                          _id: 1,
+                          typeName: 1,
+                          slug: 1,
+                          status: 1,
+                          subcategoryId: 1,
+                        },
+                      },
+                    ],
+                  },
+                },
+
+                /*
+                =================================
+                SUBCATEGORY PROJECTION
+                =================================
+                */
+
                 {
                   $project: {
                     _id: 1,
@@ -383,14 +582,22 @@ export const getCategoryTreeServiceForAdmin = async (query) => {
                     image: 1,
                     order: 1,
                     isActive: 1,
-                    categoryId: 1, 
+                    categoryId: 1,
+
+                    // NEW
+                    productTypes: 1,
                   },
                 },
               ],
             },
           },
 
-          // 🔹 Category Projection
+          /*
+          =================================
+          CATEGORY PROJECTION
+          =================================
+          */
+
           {
             $project: {
               _id: 1,
@@ -399,7 +606,7 @@ export const getCategoryTreeServiceForAdmin = async (query) => {
               image: 1,
               order: 1,
               isActive: 1,
-              pcategoryId: 1, 
+              pcategoryId: 1,
               subCategories: 1,
             },
           },
@@ -407,7 +614,12 @@ export const getCategoryTreeServiceForAdmin = async (query) => {
       },
     },
 
-    // 🔹 Parent Category Projection
+    /*
+    =================================
+    PARENT CATEGORY PROJECTION
+    =================================
+    */
+
     {
       $project: {
         _id: 1,

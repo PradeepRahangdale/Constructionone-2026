@@ -390,161 +390,6 @@ class ProductController {
     }
   }
 
-  //products according to vendorshop
-  // static async getVendorProducts(req, res, next) {
-  //   try {
-  //     const {
-  //       page = 1,
-  //       limit = 20,
-  //       sort,
-  //       minPrice,
-  //       maxPrice,
-  //       type,
-  //       newArrival,
-  //       moduleId,
-  //       pcategoryId,
-  //       categoryId,
-  //       subcategoryId,
-  //       brandId,
-  //       search,
-  //     } = req.query;
-
-  //     const { vendorId } = req.params;
-
-  //     if (!vendorId) {
-  //       return res
-  //         .status(401)
-  //         .json({ success: false, message: "Unauthorized" });
-  //     }
-
-  //     const skip = (Number(page) - 1) * Number(limit);
-
-  //     const cacheKey = `products:vendor:${vendorId}:${JSON.stringify(req.query)}`;
-  //     const cached = await RedisCache.get(cacheKey);
-  //     if (cached) return res.json(cached);
-
-  //     // ================= BASE MATCH =================
-
-  //     const matchStage = {
-  //       disable: false,
-  //       vendorId: new mongoose.Types.ObjectId(vendorId),
-  //     };
-  //     if (search) {
-  //       matchStage.$or = [
-  //         { name: { $regex: search, $options: "i" } },
-  //         { slug: { $regex: search, $options: "i" } },
-  //         { description: { $regex: search, $options: "i" } },
-  //       ];
-  //     }
-  //     // ================= CATEGORY FILTERS =================
-  //     const toObjectId = (id) =>
-  //       mongoose.Types.ObjectId.isValid(id)
-  //         ? new mongoose.Types.ObjectId(id)
-  //         : null;
-
-  //     if (moduleId) matchStage.moduleId = toObjectId(moduleId);
-  //     if (pcategoryId) matchStage.pcategoryId = toObjectId(pcategoryId);
-  //     if (categoryId) matchStage.categoryId = toObjectId(categoryId);
-  //     if (subcategoryId) matchStage.subcategoryId = toObjectId(subcategoryId);
-  //     if (brandId) matchStage.brandId = toObjectId(brandId);
-
-  //     if (newArrival === "true") {
-  //       matchStage.createdAt = {
-  //         $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-  //       };
-  //     }
-
-  //     // ================= PIPELINE =================
-  //     const pipeline = [];
-
-  //     // early vendor product filter
-  //     pipeline.push({ $match: matchStage });
-
-  //     // ================= VARIANT LOOKUP =================
-  //     pipeline.push({
-  //       $lookup: {
-  //         from: "variants",
-  //         let: { productId: "$_id" },
-  //         pipeline: [
-  //           {
-  //             $match: {
-  //               $expr: { $eq: ["$productId", "$$productId"] },
-  //               disable: false,
-  //               ...(type && { Type: type }),
-  //               ...((minPrice || maxPrice) && {
-  //                 price: {
-  //                   ...(minPrice && { $gte: Number(minPrice) }),
-  //                   ...(maxPrice && { $lte: Number(maxPrice) }),
-  //                 },
-  //               }),
-  //             },
-  //           },
-  //           { $sort: { price: 1 } },
-  //           { $limit: 1 },
-  //           {
-  //             $project: {
-  //               price: 1,
-  //               mrp: 1,
-  //               discount: 1,
-  //               Type: 1,
-  //             },
-  //           },
-  //         ],
-  //         as: "defaultVariant",
-  //       },
-  //     });
-
-  //     // remove products without variant
-  //     pipeline.push({
-  //       $match: { defaultVariant: { $ne: [] } },
-  //     });
-
-  //     // ================= SORT =================
-  //     pipeline.push({
-  //       $sort:
-  //         sort === "priceLowHigh"
-  //           ? { "defaultVariant.price": 1 }
-  //           : sort === "priceHighLow"
-  //             ? { "defaultVariant.price": -1 }
-  //             : sort === "oldest"
-  //               ? { createdAt: 1 }
-  //               : { createdAt: -1 },
-  //     });
-
-  //     // ================= PAGINATION =================
-  //     pipeline.push({ $skip: skip }, { $limit: Number(limit) });
-
-  //     // ================= BRAND LOOKUP =================
-  //     pipeline.push(
-  //       {
-  //         $lookup: {
-  //           from: "brands",
-  //           localField: "brandId",
-  //           foreignField: "_id",
-  //           pipeline: [{ $project: { name: 1 } }],
-  //           as: "brandId",
-  //         },
-  //       },
-  //       { $unwind: { path: "$brandId", preserveNullAndEmptyArrays: true } },
-  //     );
-
-  //     const products = await Product.aggregate(pipeline);
-
-  //     const response = {
-  //       success: true,
-  //       message: "Vendor products fetched successfully",
-  //       results: products.length,
-  //       data: { products },
-  //     };
-
-  //     await RedisCache.set(cacheKey, response, 60);
-
-  //     return res.status(200).json(response);
-  //   } catch (error) {
-  //     next(error);
-  //   }
-  // }
-
   static async getVendorProducts(req, res, next) {
     try {
       const {
@@ -840,18 +685,240 @@ class ProductController {
     }
   }
 
+  //sanvi-code
+  // static async createProduct(req, res, next) {
+  //   const session = await mongoose.startSession();
+  //   session.startTransaction();
+
+  //   try {
+  //     // support normal form-data (CHANGED)
+  //     let productData = { ...req.body };
+
+  //     // prevent client from spoofing vendor
+  //     delete productData.vendorId;
+
+  //     // parse shippingCharges from form-data
+  //     if (typeof productData.shippingCharges === "string") {
+  //       try {
+  //         productData.shippingCharges = JSON.parse(productData.shippingCharges);
+  //       } catch (err) {
+  //         throw new APIError("Invalid shippingCharges format", 400);
+  //       }
+  //     }
+
+  //     // optional but recommended normalization
+  //     if (productData.shippingCharges) {
+  //       productData.shippingCharges = {
+  //         fixed: Number(productData.shippingCharges.fixed || 0),
+  //         distancePerKm: Number(productData.shippingCharges.distancePerKm || 0),
+  //         weightPerKg: Number(productData.shippingCharges.weightPerKg || 0),
+  //       };
+  //     }
+
+  //     let variants = req.body.variants;
+
+  //     //  remove variants from product payload (NEW)
+  //     delete productData.variants;
+
+  //     //  safer validation (UPDATED)
+  //     // when vendor add a product to add a varient is required logic
+  //     if (!variants || !Array.isArray(variants) || variants.length === 0) {
+  //       throw new APIError("At least one variant is required", 400);
+  //     }
+
+  //     // when vendor add a product so no need to add varient logic
+  //     // if (!variants || !Array.isArray(variants)) {
+  //     //   variants = [];
+  //     // }
+
+  //     // HANDLE FILES
+  //     const uploadedImages = req.files?.images?.map((f) => f.location) || [];
+  //     const uploadedThumbnail = req.files?.thumbnail?.[0]?.location || null;
+
+  //     if (uploadedImages.length) {
+  //       productData.images = uploadedImages;
+  //     }
+
+  //     if (uploadedThumbnail) {
+  //       productData.thumbnail = uploadedThumbnail;
+  //     }
+
+  //     // CREATE PRODUCT (FIXED)
+
+  //     const vendorCompany = await VendorCompany.findOne({
+  //       vendorId: req.user.id,
+  //     })
+  //       .select("location")
+  //       .lean();
+
+  //     let vendorLocation = undefined;
+
+  //     if (vendorCompany?.location?.coordinates?.length === 2) {
+  //       vendorLocation = vendorCompany.location;
+  //     }
+
+  //     // CREATE PRODUCT (FIXED)
+  //     const productArr = await Product.create(
+  //       [
+  //         {
+  //           ...productData,
+  //           vendorId: req.user.id,
+  //           vendorLocation,
+  //           // correct owner
+  //         },
+  //       ],
+  //       { session },
+  //     );
+  //     const product = productArr[0];
+
+  //     // SECURITY CLEANUP
+  //     const forbiddenFields = [
+  //       "productId",
+  //       "moduleId",
+  //       "pcategoryId",
+  //       "categoryId",
+  //       "subcategoryId",
+  //       "brandId",
+  //     ];
+
+  //     variants = variants.map((v) => {
+  //       forbiddenFields.forEach((field) => delete v[field]);
+  //       return v;
+  //     });
+
+  //     // PREPARE VARIANTS
+  //     const preparedVariants = variants.map((variant) => {
+  //       const mrp = Number(variant.mrp || 0);
+  //       const discount = Number(variant.discount || 0);
+
+  //       //  calculate both values
+  //       const { price, discountAmount } = calculateDiscount(mrp, discount);
+
+  //       //  prevent manual price override (PRO)
+  //       const { price: _p, discountAmount: _d, ...safeVariant } = variant;
+
+  //       return {
+  //         ...safeVariant,
+
+  //         price,
+  //         discountAmount,
+  //         // AUTO INJECT
+  //         productId: product._id,
+  //         moduleId: product.moduleId,
+  //         pcategoryId: product.pcategoryId,
+  //         categoryId: product.categoryId,
+  //         subcategoryId: product.subcategoryId,
+  //         brandId: product.brandId,
+  //         // ✅ FIXED vendor ownership
+  //         vendorId: req.user.id,
+  //       };
+  //     });
+
+  //     // BULK CREATE VARIANTS
+  //     const createdVariants = await Variant.insertMany(preparedVariants, {
+  //       session,
+  //     });
+
+  //     // SET DEFAULT VARIANT
+  //     product.defaultVariantId = createdVariants[0]._id;
+  //     await product.save({ session });
+
+  //     await session.commitTransaction();
+  //     session.endSession();
+
+  //     // CACHE CLEAR
+  //     await Promise.all([
+  //       RedisCache.deletePattern("products:public:v2:*"),
+  //       RedisCache.deletePattern("products:admin:v1:*"),
+  //       RedisCache.deletePattern("products:vendor:*"),
+  //       RedisCache.deletePattern("products:subcat:*"),
+  //       RedisCache.deletePattern("products:*"), // optional full clear
+  //       RedisCache.deletePattern(`products:cat:*`),
+  //     ]);
+  //     res.status(201).json({
+  //       status: "success",
+  //       message: "Product created with variants",
+  //       data: {
+  //         product,
+  //         variants: createdVariants,
+  //       },
+  //     });
+  //   } catch (err) {
+  //     await session.abortTransaction();
+  //     session.endSession();
+  //     next(err);
+  //   }
+  // }
+  // UPDATE PRODUCT
+
+  //asgar-code
   static async createProduct(req, res, next) {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      // support normal form-data (CHANGED)
+      // =========================
+      // BASIC PRODUCT DATA
+      // =========================
       let productData = { ...req.body };
 
       // prevent client from spoofing vendor
       delete productData.vendorId;
 
-      // parse shippingCharges from form-data
+      // =========================
+      // MULTIPLE SUBCATEGORY SUPPORT
+      // =========================
+
+      // subcategoryId => array support
+      if (typeof productData.subcategoryId === "string") {
+        try {
+          productData.subcategoryId = JSON.parse(productData.subcategoryId);
+
+          if (!Array.isArray(productData.subcategoryId)) {
+            productData.subcategoryId = [productData.subcategoryId];
+          }
+        } catch (err) {
+          productData.subcategoryId = [productData.subcategoryId];
+        }
+      }
+
+      if (
+        !productData.subcategoryId ||
+        !Array.isArray(productData.subcategoryId) ||
+        productData.subcategoryId.length === 0
+      ) {
+        throw new APIError("At least one subcategory is required", 400);
+      }
+
+      // =========================
+      // MULTIPLE PRODUCT TYPE SUPPORT
+      // =========================
+
+      // productTypeId => array support
+      if (typeof productData.productTypeId === "string") {
+        try {
+          productData.productTypeId = JSON.parse(productData.productTypeId);
+
+          if (!Array.isArray(productData.productTypeId)) {
+            productData.productTypeId = [productData.productTypeId];
+          }
+        } catch (err) {
+          productData.productTypeId = [productData.productTypeId];
+        }
+      }
+
+      if (
+        !productData.productTypeId ||
+        !Array.isArray(productData.productTypeId) ||
+        productData.productTypeId.length === 0
+      ) {
+        throw new APIError("At least one product type is required", 400);
+      }
+
+      // =========================
+      // SHIPPING CHARGES PARSE
+      // =========================
+
       if (typeof productData.shippingCharges === "string") {
         try {
           productData.shippingCharges = JSON.parse(productData.shippingCharges);
@@ -860,7 +927,6 @@ class ProductController {
         }
       }
 
-      // optional but recommended normalization
       if (productData.shippingCharges) {
         productData.shippingCharges = {
           fixed: Number(productData.shippingCharges.fixed || 0),
@@ -869,24 +935,35 @@ class ProductController {
         };
       }
 
+      // =========================
+      // VARIANTS
+      // =========================
+
       let variants = req.body.variants;
 
-      //  remove variants from product payload (NEW)
+      // remove from product payload
       delete productData.variants;
 
-      //  safer validation (UPDATED)
-      // when vendor add a product to add a varient is required logic
+      // if variants sent as string (form-data)
+      if (typeof variants === "string") {
+        try {
+          variants = JSON.parse(variants);
+        } catch (err) {
+          throw new APIError("Invalid variants format", 400);
+        }
+      }
+
       if (!variants || !Array.isArray(variants) || variants.length === 0) {
         throw new APIError("At least one variant is required", 400);
       }
 
-      // when vendor add a product so no need to add varient logic
-      // if (!variants || !Array.isArray(variants)) {
-      //   variants = [];
-      // }
-
+      // =========================
       // HANDLE FILES
-      const uploadedImages = req.files?.images?.map((f) => f.location) || [];
+      // =========================
+
+      const uploadedImages =
+        req.files?.images?.map((file) => file.location) || [];
+
       const uploadedThumbnail = req.files?.thumbnail?.[0]?.location || null;
 
       if (uploadedImages.length) {
@@ -897,7 +974,9 @@ class ProductController {
         productData.thumbnail = uploadedThumbnail;
       }
 
-      // CREATE PRODUCT (FIXED)
+      // =========================
+      // VENDOR LOCATION
+      // =========================
 
       const vendorCompany = await VendorCompany.findOne({
         vendorId: req.user.id,
@@ -911,87 +990,125 @@ class ProductController {
         vendorLocation = vendorCompany.location;
       }
 
-      // CREATE PRODUCT (FIXED)
+      // =========================
+      // CREATE PRODUCT
+      // =========================
+
       const productArr = await Product.create(
         [
           {
             ...productData,
             vendorId: req.user.id,
             vendorLocation,
-            // correct owner
           },
         ],
         { session },
       );
+
       const product = productArr[0];
 
+      // =========================
       // SECURITY CLEANUP
+      // =========================
+
       const forbiddenFields = [
         "productId",
         "moduleId",
         "pcategoryId",
         "categoryId",
         "subcategoryId",
+        "productTypeId",
         "brandId",
+        "vendorId",
+        "price",
+        "discountAmount",
       ];
 
-      variants = variants.map((v) => {
-        forbiddenFields.forEach((field) => delete v[field]);
-        return v;
+      variants = variants.map((variant) => {
+        forbiddenFields.forEach((field) => delete variant[field]);
+        return variant;
       });
 
+      // =========================
       // PREPARE VARIANTS
+      // =========================
+
       const preparedVariants = variants.map((variant) => {
         const mrp = Number(variant.mrp || 0);
         const discount = Number(variant.discount || 0);
 
-        //  calculate both values
         const { price, discountAmount } = calculateDiscount(mrp, discount);
 
-        //  prevent manual price override (PRO)
-        const { price: _p, discountAmount: _d, ...safeVariant } = variant;
+        const {
+          price: removedPrice,
+          discountAmount: removedDiscountAmount,
+          ...safeVariant
+        } = variant;
 
         return {
           ...safeVariant,
 
+          // auto calculated values
           price,
           discountAmount,
-          // AUTO INJECT
+
+          // auto inject relations
           productId: product._id,
           moduleId: product.moduleId,
           pcategoryId: product.pcategoryId,
           categoryId: product.categoryId,
+
+          // multiple array fields
           subcategoryId: product.subcategoryId,
+          productTypeId: product.productTypeId,
+
           brandId: product.brandId,
-          // ✅ FIXED vendor ownership
           vendorId: req.user.id,
         };
       });
 
+      // =========================
       // BULK CREATE VARIANTS
+      // =========================
+
       const createdVariants = await Variant.insertMany(preparedVariants, {
         session,
       });
 
-      // SET DEFAULT VARIANT
+      // =========================
+      // DEFAULT VARIANT
+      // =========================
+
       product.defaultVariantId = createdVariants[0]._id;
       await product.save({ session });
+
+      // =========================
+      // COMMIT TRANSACTION
+      // =========================
 
       await session.commitTransaction();
       session.endSession();
 
+      // =========================
       // CACHE CLEAR
+      // =========================
+
       await Promise.all([
         RedisCache.deletePattern("products:public:v2:*"),
         RedisCache.deletePattern("products:admin:v1:*"),
         RedisCache.deletePattern("products:vendor:*"),
         RedisCache.deletePattern("products:subcat:*"),
-        RedisCache.deletePattern("products:*"), // optional full clear
-        RedisCache.deletePattern(`products:cat:*`),
+        RedisCache.deletePattern("products:cat:*"),
+        RedisCache.deletePattern("products:*"),
       ]);
+
+      // =========================
+      // RESPONSE
+      // =========================
+
       res.status(201).json({
         status: "success",
-        message: "Product created with variants",
+        message: "Product created successfully with variants",
         data: {
           product,
           variants: createdVariants,
@@ -1003,7 +1120,7 @@ class ProductController {
       next(err);
     }
   }
-  // UPDATE PRODUCT
+
   static async updateProduct(req, res, next) {
     try {
       const { id } = req.params;
@@ -1795,6 +1912,87 @@ class ProductController {
       next(err);
     }
   }
+  //withour all type filter
+  // static async getProductByCategory(req, res) {
+  //   try {
+  //     const { categoryId } = req.params;
+  //     const { page = 1, limit = 10, type } = req.query;
+
+  //     const cacheKey = `products:cat:${categoryId}:page:${page}:limit:${limit}:type:${type || "all"}`;
+
+  //     // 1. CHECK CACHE
+  //     const cachedData = await RedisCache.get(cacheKey);
+  //     if (cachedData) {
+  //       return res.json(JSON.parse(cachedData));
+  //     }
+
+  //     const skip = (page - 1) * limit;
+
+  //     const filter = { categoryId };
+
+  //     //  TYPE FILTER (same as before)
+  //     if (type) {
+  //       const variantIds = await Variant.find({
+  //         Type: { $regex: new RegExp(`^${type}$`, "i") },
+  //       }).select("_id");
+
+  //       filter.defaultVariantId = {
+  //         $in: variantIds.map((v) => v._id),
+  //       };
+  //     }
+
+  //     const products = await Product.find(filter)
+  //       .select(
+  //         "name images avgRating reviewCount slug properties minDiscount maxDiscount vendorId defaultVariantId",
+  //       )
+  //       .populate({
+  //         path: "vendorId",
+  //         select: "firstName lastName",
+  //       })
+  //       .populate({
+  //         path: "defaultVariantId",
+  //         select: "price discount Type",
+  //       })
+  //       .skip(skip)
+  //       .limit(Number(limit));
+
+  //     const formattedProducts = products.map((p) => ({
+  //       id: p._id,
+  //       name: p.name,
+  //       images: p.images,
+  //       avgRating: p.avgRating,
+  //       reviewCount: p.reviewCount,
+  //       slug: p.slug,
+  //       properties: p.properties,
+  //       minDiscount: p.minDiscount,
+  //       maxDiscount: p.maxDiscount,
+  //       vendor: {
+  //         firstName: p.vendorId?.firstName,
+  //         lastName: p.vendorId?.lastName,
+  //       },
+  //       price: p.defaultVariantId?.price ?? null,
+  //       discount: p.defaultVariantId?.discount ?? null,
+  //       type: p.defaultVariantId?.Type ?? null,
+  //     }));
+
+  //     const total = await Product.countDocuments(filter);
+
+  //     const response = {
+  //       success: true,
+  //       page: Number(page),
+  //       totalPages: Math.ceil(total / limit),
+  //       totalProducts: total,
+  //       products: formattedProducts,
+  //     };
+
+  //     // 2. SET CACHE
+  //     await RedisCache.set(cacheKey, JSON.stringify(response), 300);
+
+  //     res.json(response);
+  //   } catch (error) {
+  //     res.status(500).json({ message: error.message });
+  //   }
+  // }
 
   static async getProductByCategory(req, res) {
     try {
@@ -1803,7 +2001,6 @@ class ProductController {
 
       const cacheKey = `products:cat:${categoryId}:page:${page}:limit:${limit}:type:${type || "all"}`;
 
-      // 1. CHECK CACHE
       const cachedData = await RedisCache.get(cacheKey);
       if (cachedData) {
         return res.json(JSON.parse(cachedData));
@@ -1811,9 +2008,14 @@ class ProductController {
 
       const skip = (page - 1) * limit;
 
-      const filter = { categoryId };
+      const filter = {};
 
-      // 🔥 TYPE FILTER (same as before)
+      // 👉 agar "all" nahi hai tabhi category filter lagao
+      if (categoryId !== "all") {
+        filter.categoryId = categoryId;
+      }
+
+      // 🔥 TYPE FILTER
       if (type) {
         const variantIds = await Variant.find({
           Type: { $regex: new RegExp(`^${type}$`, "i") },
@@ -1868,7 +2070,6 @@ class ProductController {
         products: formattedProducts,
       };
 
-      // 2. SET CACHE
       await RedisCache.set(cacheKey, JSON.stringify(response), 300);
 
       res.json(response);
@@ -1878,41 +2079,41 @@ class ProductController {
   }
 }
 //demo
-export const addVariant = async (req, res) => {
-  try {
-    const { productId } = req.params;
-    const { size, mrp, discount, stock, Type } = req.body;
+// export const addVariant = async (req, res) => {
+//   try {
+//     const { productId } = req.params;
+//     const { size, mrp, discount, stock, Type } = req.body;
 
-    const product = await Product.findById(productId);
+//     const product = await Product.findById(productId);
 
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
+//     if (!product) {
+//       return res.status(404).json({ message: "Product not found" });
+//     }
 
-    const price = mrp - (mrp * discount) / 100;
+//     const price = mrp - (mrp * discount) / 100;
 
-    const variant = await Variant.create({
-      productId,
-      moduleId: product.moduleId,
-      pcategoryId: product.pcategoryId,
-      categoryId: product.categoryId,
-      subcategoryId: product.subcategoryId,
-      brandId: product.brandId,
-      size,
-      mrp,
-      discount,
-      price,
-      stock,
-      Type,
-    });
-    await RedisCache.del(`products:subcat:${subcategoryId}*`);
-    res.json({
-      success: true,
-      variant,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+//     const variant = await Variant.create({
+//       productId,
+//       moduleId: product.moduleId,
+//       pcategoryId: product.pcategoryId,
+//       categoryId: product.categoryId,
+//       subcategoryId: product.subcategoryId,
+//       brandId: product.brandId,
+//       size,
+//       mrp,
+//       discount,
+//       price,
+//       stock,
+//       Type,
+//     });
+//     await RedisCache.del(`products:subcat:${subcategoryId}*`);
+//     res.json({
+//       success: true,
+//       variant,
+//     });
+//   } catch (error) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
 
 export default ProductController;
