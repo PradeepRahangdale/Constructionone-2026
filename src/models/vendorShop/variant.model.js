@@ -8,7 +8,6 @@ const variantSchema = new mongoose.Schema(
     //   required: true,
     //   index: true,
     // },
-
     // pcategoryId: {
     //   type: mongoose.Schema.Types.ObjectId,
     //   ref: "PCategory",

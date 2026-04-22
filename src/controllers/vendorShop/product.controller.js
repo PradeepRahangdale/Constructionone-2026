@@ -4,10 +4,12 @@ import Variant from "../../models/vendorShop/variant.model.js";
 import { APIError } from "../../middlewares/errorHandler.js";
 import RedisCache from "../../utils/redisCache.js";
 import { calculateDiscount } from "../../utils/priceCalculator.js";
+
 import {
   VendorCompany,
   VendorProfile,
 } from "../../models/vendorShop/vendor.model.js";
+
 class ProductController {
   //admingetAll
   static async getAllProductsAdmin(req, res, next) {
@@ -148,7 +150,6 @@ class ProductController {
       next(error);
     }
   }
-
   //users get all
   static async getProducts(req, res, next) {
     try {
@@ -171,7 +172,6 @@ class ProductController {
       } = req.query;
 
       const skip = (Number(page) - 1) * Number(limit);
-
       // REDIS CACHE
       const cacheKey = `products:public:v2:${JSON.stringify(req.query)}`;
       const cached = await RedisCache.get(cacheKey);
@@ -206,7 +206,7 @@ class ProductController {
       // ================= PIPELINE =================
       const pipeline = [];
 
-      //  GEO FIRST (kept as you wrote)
+      //  GEO FIRST (kept as you wrote) - sanvi
       if (useGeo) {
         pipeline.push({
           $geoNear: {
@@ -268,7 +268,7 @@ class ProductController {
         },
       });
 
-      // ================= ✅ FIXED VENDOR LOOKUP =================
+      // ================= FIXED VENDOR LOOKUP =================
       // pipeline.push(
       //   {
       //     $lookup: {
@@ -321,15 +321,27 @@ class ProductController {
 
         // ================= FINAL CLEAN RESPONSE =================
         {
+          // $addFields: {
+          //   vendor: {
+          //     companyName: "$vendorCompany.companyName",
+          //     businessAddress: "$vendorCompany.businessAddress",
+          //     badges: "$vendorCompany.badges",
+          //     // shopImages: "$vendorCompany.shopImages",
+          //     firstName: "$vendorProfile.firstName",
+          //     lastName: "$vendorProfile.lastName",
+          //   },
+          //   vendorLocation: "$vendorLocation",
+          // },
+
           $addFields: {
             vendor: {
               companyName: "$vendorCompany.companyName",
               businessAddress: "$vendorCompany.businessAddress",
               badges: "$vendorCompany.badges",
-              // shopImages: "$vendorCompany.shopImages",
               firstName: "$vendorProfile.firstName",
               lastName: "$vendorProfile.lastName",
             },
+            vendorLocation: "$vendorLocation",
           },
         },
 
@@ -383,7 +395,7 @@ class ProductController {
       };
 
       // CACHE RESULT
-      await RedisCache.set(cacheKey, response, 60);
+      // await RedisCache.set(cacheKey, response, 60);
       return res.status(200).json(response);
     } catch (error) {
       next(error);
@@ -852,6 +864,7 @@ class ProductController {
   // UPDATE PRODUCT
 
   //asgar-code
+
   static async createProduct(req, res, next) {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -1203,24 +1216,41 @@ class ProductController {
 
       const cacheKey = `product:v1:${id}`;
       const cached = await RedisCache.get(cacheKey);
-      if (cached) return res.json(cached);
 
+      if (cached) {
+        return res.json(cached);
+      }
+
+      // product fetch
       const product = await Product.findById(id)
         .populate("brandId", "name")
-        .populate("defaultVariantId")
-        .lean(); // faster
+        .populate("subcategoryId", "name")
+        .populate("productTypeId", "typeName")
+        .lean();
 
       if (!product) {
         throw new APIError("Product not found", 404);
       }
 
+      // all variants fetch
+      const variants = await Variant.find({
+        productId: id,
+        disable: false,
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
       const result = {
         status: "success",
         message: "Product fetched successfully",
-        data: { product },
+        data: {
+          product,
+          variants,
+        },
       };
 
       await RedisCache.set(cacheKey, result);
+
       res.json(result);
     } catch (err) {
       next(err);
@@ -1236,7 +1266,6 @@ class ProductController {
       if (!product) {
         throw new APIError("Product not found", 404);
       }
-
       // FIX: remove invalid geo data
       if (
         product.vendorLocation &&
@@ -1993,7 +2022,6 @@ class ProductController {
   //     res.status(500).json({ message: error.message });
   //   }
   // }
-
   static async getProductByCategory(req, res) {
     try {
       const { categoryId } = req.params;
@@ -2077,43 +2105,91 @@ class ProductController {
       res.status(500).json({ message: error.message });
     }
   }
+
+  static async getProductByVendorBrand(req, res) {
+    try {
+      const { vendorId, brandId } = req.params;
+      const { page = 1, limit = 10, Type } = req.query;
+
+      const cacheKey = `products:vendor:${vendorId}:brand:${brandId}:page:${page}:limit:${limit}:type:${Type || "all"}`;
+
+      // 1. CACHE CHECK
+      const cachedData = await RedisCache.get(cacheKey);
+      if (cachedData) {
+        return res.json(JSON.parse(cachedData));
+      }
+
+      const skip = (page - 1) * limit;
+
+      // 2. BASE FILTER
+      const filter = {
+        vendorId,
+        brandId,
+      };
+
+      // 3. TYPE FILTER (BULK / RETAIL)
+      if (Type) {
+        filter["defaultVariantId"] = {
+          $in: await Variant.find({
+            Type: { $regex: new RegExp(`^${Type}$`, "i") },
+          }).distinct("_id"),
+        };
+      }
+
+      // 4. QUERY
+      const products = await Product.find(filter)
+        .select(
+          "name images avgRating reviewCount slug properties vendorId defaultVariantId",
+        )
+        .populate({
+          path: "vendorId",
+          select: "firstName lastName",
+        })
+        .populate({
+          path: "defaultVariantId",
+          select: "price discount Type",
+        })
+        .skip(skip)
+        .limit(Number(limit));
+
+      // 5. FORMAT RESPONSE
+      const formattedProducts = products.map((p) => ({
+        id: p._id,
+        name: p.name,
+        images: p.images,
+        avgRating: p.avgRating,
+        reviewCount: p.reviewCount,
+        slug: p.slug,
+        properties: p.properties,
+        vendor: {
+          firstName: p.vendorId?.firstName,
+          lastName: p.vendorId?.lastName,
+        },
+        price: p.defaultVariantId?.price ?? null,
+        discount: p.defaultVariantId?.discount ?? null,
+        type: p.defaultVariantId?.Type ?? null,
+      }));
+
+      const total = await Product.countDocuments(filter);
+
+      const response = {
+        success: true,
+        page: Number(page),
+        totalPages: Math.ceil(total / limit),
+        totalProducts: total,
+        products: formattedProducts,
+      };
+
+      await RedisCache.set(cacheKey, JSON.stringify(response), 300);
+
+      return res.json(response);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
 }
-//demo
-// export const addVariant = async (req, res) => {
-//   try {
-//     const { productId } = req.params;
-//     const { size, mrp, discount, stock, Type } = req.body;
-
-//     const product = await Product.findById(productId);
-
-//     if (!product) {
-//       return res.status(404).json({ message: "Product not found" });
-//     }
-
-//     const price = mrp - (mrp * discount) / 100;
-
-//     const variant = await Variant.create({
-//       productId,
-//       moduleId: product.moduleId,
-//       pcategoryId: product.pcategoryId,
-//       categoryId: product.categoryId,
-//       subcategoryId: product.subcategoryId,
-//       brandId: product.brandId,
-//       size,
-//       mrp,
-//       discount,
-//       price,
-//       stock,
-//       Type,
-//     });
-//     await RedisCache.del(`products:subcat:${subcategoryId}*`);
-//     res.json({
-//       success: true,
-//       variant,
-//     });
-//   } catch (error) {
-//     res.status(500).json({ message: error.message });
-//   }
-// };
 
 export default ProductController;

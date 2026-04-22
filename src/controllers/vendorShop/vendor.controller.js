@@ -1285,8 +1285,8 @@ export const getAllVendorsViaModuleId = async (req, res) => {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit) || 10, 100);
     const skip = (page - 1) * limit;
-
-    const { search, isAdminVerified, disable, moduleId, sort } = req.query;
+    const moduleId = req.params.moduleId;
+    const { search, isAdminVerified, disable, sort } = req.query;
 
     const cacheKey = `vendors:module:v1:${JSON.stringify(req.query)}`;
     const cached = await RedisCache.get(cacheKey);
@@ -1295,9 +1295,9 @@ export const getAllVendorsViaModuleId = async (req, res) => {
     const matchVendor = {};
 
     // ---------------- MODULE FILTER ----------------
-    if (moduleId) {
-      matchVendor.moduleId = new mongoose.Types.ObjectId(moduleId);
-    }
+    // if (moduleId) {
+    //   matchVendor.moduleId = new mongoose.Types.ObjectId(moduleId);
+    // }
 
     if (isAdminVerified !== undefined) {
       matchVendor.isAdminVerified = isAdminVerified === "true";
@@ -1321,10 +1321,8 @@ export const getAllVendorsViaModuleId = async (req, res) => {
 
     // ---------------- PIPELINE ----------------
     const pipeline = [
-      // 1️⃣ FILTER VENDOR PROFILE FIRST
-      { $match: matchVendor },
-
-      // 2️⃣ JOIN VENDOR COMPANY
+      { $match: { moduleId: new mongoose.Types.ObjectId(moduleId) } },
+      // 2️ JOIN VENDOR COMPANY
       {
         $lookup: {
           from: "vendorcompanies",
@@ -1340,7 +1338,6 @@ export const getAllVendorsViaModuleId = async (req, res) => {
         },
       },
 
-      // 3️⃣ FILTER COMPANY SEARCH (optional)
       ...(search
         ? [
             {
@@ -1358,14 +1355,11 @@ export const getAllVendorsViaModuleId = async (req, res) => {
           ]
         : []),
 
-      // 4️⃣ SORT
       { $sort: sortStage },
 
-      // 5️⃣ PAGINATION
       { $skip: skip },
       { $limit: limit },
 
-      // 6️⃣ CLEAN RESPONSE
       {
         $project: {
           firstName: 1,
@@ -1405,7 +1399,7 @@ export const getAllVendorsViaModuleId = async (req, res) => {
       data: vendors,
     };
 
-    await RedisCache.set(cacheKey, response, 60);
+    await RedisCache.set(cacheKey, response, 30);
 
     return res.json(response);
   } catch (error) {
@@ -1415,6 +1409,7 @@ export const getAllVendorsViaModuleId = async (req, res) => {
     });
   }
 };
+
 // export const getVendorById = async (req, res) => {
 //   try {
 //     const { vendorId } = req.params;

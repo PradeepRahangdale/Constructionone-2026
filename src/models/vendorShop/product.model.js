@@ -53,7 +53,7 @@ const productSchema = new mongoose.Schema(
     subcategoryId: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Subcategory",
+        ref: "SubCategory",
         required: true,
       },
     ],
@@ -66,6 +66,7 @@ const productSchema = new mongoose.Schema(
         required: true,
       },
     ],
+
     brandId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Brand",
@@ -126,30 +127,65 @@ const productSchema = new mongoose.Schema(
       type: String,
     },
 
+    // "fixedCharge",
+    //   "distanceAndWeightBased",
+    //   "customerPickup",
+
     deliveryCharges: {
       type: String,
-      enum: [
-        "free",
-        "fixedCharge",
-        "distanceAndWeightBased",
-        "customerPickup",
-        "distanceWeightVolumeBased",
-      ],
+      enum: ["free", "distanceWeightVolumeBased"],
       trim: true,
       default: "distanceWeightVolumeBased",
     },
 
-    shippingCharges: {
-      fixed: { type: Number },
-      distancePerKm: { type: Number },
-      weightPerKg: { type: Number },
+    deliveryOptions: {
+      type: [String],
+      enum: ["self", "logistic", "vendor"],
+      default: ["self", "logistic"],
     },
 
-    returnPolicy: {
-      type: String,
-      enum: ["noReturn", "7day", "15day", "13day", "defectiveReplacement"],
-      trim: true,
+    serviceableDeliveryPincode: {
+      type: [
+        {
+          type: String,
+          trim: true,
+          validate: {
+            validator: function (value) {
+              return /^\d{6}$/.test(value);
+            },
+            message: "Invalid pincode format",
+          },
+        },
+      ],
+      default: [],
     },
+
+    // shippingCharges: {
+    //   fixed: { type: Number },
+    //   distancePerKm: { type: Number },
+    //   weightPerKg: { type: Number },
+    // },
+
+    shippingCharges: {
+      fixed: { type: Number, default: 0 },
+      distancePerKm: { type: Number, default: 0 },
+      weightPerKg: { type: Number, default: 0 },
+      perPieceCharge: { type: Number, default: 0 },
+      perLiterCharge: { type: Number, default: 0 },
+      perMeterCharge: { type: Number, default: 0 },
+      perBoxCharge: { type: Number, default: 0 },
+      perSuperMeterCharge: { type: Number, default: 0 },
+      perCubicMeterCharge: { type: Number, default: 0 },
+      perSetCharge: { type: Number, default: 0 },
+      perRollCharge: { type: Number, default: 0 },
+    },
+
+    // returnPolicy: {
+    //   type: String,
+    //   enum: ["noReturn", "7day", "15day", "13day", "defectiveReplacement"],
+    //   trim: true,
+    // },
+
     warrantyPeriod: {
       type: String,
       enum: ["no-warranty", "6month", "1year", "2year", "5year", "lifetime"],
@@ -161,24 +197,27 @@ const productSchema = new mongoose.Schema(
       ref: "Variant",
     },
 
-    preferredPayementMethod: {
-      type: String,
-      enum: [
-        "100advance",
-        "50-advance-50-on-delivery",
-        "30-days-credit",
-        "cod",
-        "as-per-purchase-order",
-      ],
-    },
+    // preferredPayementMethod: {
+    //   type: String,
+    //   enum: [
+    //     "100advance",
+    //     "50-advance-50-on-delivery",
+    //     "30-days-credit",
+    //     "cod",
+    //     "as-per-purchase-order",
+    //   ],
+    // },
+
     safetyInstructions: {
       type: String,
       trim: true,
     },
+
     varified: {
       type: Boolean,
       default: false,
     },
+
     verifyReason: {
       type: String,
       default: "",
@@ -199,28 +238,32 @@ const productSchema = new mongoose.Schema(
       default: 0,
     },
 
-    returnDays: {
-      type: Number,
-      default: 7, // days after delivery within which return is allowed
-      min: 0, // 0 = product is not returnable
-    },
+    // returnDays: {
+    //   type: Number,
+    //   default: 7, // days after delivery within which return is allowed
+    //   min: 0, // 0 = product is not returnable
+    // },
 
     disable: {
       type: Boolean,
       default: false,
     },
+
     discount: {
       type: Number,
       min: 0,
     },
+
     isFeatured: {
       type: Boolean,
       default: false,
     },
+
     isFlashSale: {
       type: Boolean,
       default: false,
     },
+
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "vendorProfile",
@@ -265,6 +308,7 @@ const productSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+productSchema.index({ vendorLocation: "2dsphere" });
 // heavy-duty index for marketplace filtering
 // base category index
 productSchema.index({

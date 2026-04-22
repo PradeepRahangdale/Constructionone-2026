@@ -42,6 +42,11 @@ router.get(
   authMiddleware,
   ProductController.getProductBySubCategory,
 );
+router.get(
+  "/product/vendorshop/:vendorId/brand/:brandId",
+  authMiddleware,
+  ProductController.getProductByVendorBrand,
+);
 
 // GET top selling products (must be BEFORE /product/:id to avoid wildcard conflict)
 router.get(

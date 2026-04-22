@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -8,8 +11,6 @@ import hpp from "hpp";
 import { connectDB } from "./config/database.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 import apiRoutes from "./routes/index.js";
-import dotenv from "dotenv";
-dotenv.config();
 import logger from "./utils/logger.js";
 import "./workers/shipping.worker.js";
 import "./workers/settlement.worker.js";

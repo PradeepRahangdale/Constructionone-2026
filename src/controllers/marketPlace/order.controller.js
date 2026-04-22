@@ -19,6 +19,7 @@ import invoice from "../../middlewares/invoice.middleware.js";
 import vendorTaxInvoice from "../../middlewares/invoice.vendor.js";
 import creditNoteInvoice from "../../middlewares/creditNote.middleware.js";
 import { VendorCompany } from "../../models/vendorShop/vendor.model.js";
+import Address from "../../models/user/address.model.js";
 // generateShippingLabel import removed - now used in shipping.worker.js
 
 /**
@@ -28,33 +29,94 @@ import { VendorCompany } from "../../models/vendorShop/vendor.model.js";
  *   2. Vendor tax invoice for each subOrder
  * Saves the PDF URL to order.invoice on each respective document.
  */
+
+//priyanshu-------->
+// async function generateOrderInvoices(masterOrder, subOrders) {
+//   try {
+//     // 1. User order invoice
+//     const userPdfUrl = await invoice(masterOrder);
+//     await Order.updateOne(
+//       { _id: masterOrder._id },
+//       { $set: { invoice: userPdfUrl } },
+//     );
+
+//     // 2. Vendor tax invoices — fetch all VendorCompany docs in one query
+//     const vendorIds = [
+//       ...new Set(subOrders.map((o) => o.vandorId?.toString()).filter(Boolean)),
+//     ];
+//     const vendorCompanyDocs = await VendorCompany.find({
+//       vendorId: { $in: vendorIds },
+//     }).lean();
+//     const vcMap = new Map(
+//       vendorCompanyDocs.map((vc) => [vc.vendorId.toString(), vc]),
+//     );
+
+//     await Promise.allSettled(
+//       subOrders.map(async (subOrder) => {
+//         const vc = vcMap.get(subOrder.vandorId?.toString()) || {};
+//         // Map VendorCompany fields to what buildVendorInvoiceHtml expects
+//         const vendorData = {
+//           businessName: vc.companyName || "Vendor",
+//           gstNumber: vc.gstNumber || "N/A",
+//           address: [
+//             vc.businessAddress?.address,
+//             vc.businessAddress?.city,
+//             vc.businessAddress?.state,
+//             vc.businessAddress?.pincode,
+//           ]
+//             .filter(Boolean)
+//             .join(", "),
+//         };
+
+//         const vendorPdfUrl = await vendorTaxInvoice(subOrder, vendorData);
+//         await Order.updateOne(
+//           { _id: subOrder._id },
+//           { $set: { invoice: vendorPdfUrl } },
+//         );
+//       }),
+//     );
+//   } catch (err) {
+//     console.error("[Invoice] generateOrderInvoices error:", err.message);
+//   }
+// }
+
 async function generateOrderInvoices(masterOrder, subOrders) {
   try {
-    // 1. User order invoice
+    // USER MASTER ORDER INVOICE
     const userPdfUrl = await invoice(masterOrder);
+
     await Order.updateOne(
       { _id: masterOrder._id },
-      { $set: { invoice: userPdfUrl } },
+      {
+        $set: {
+          invoice: userPdfUrl,
+        },
+      },
     );
 
-    // 2. Vendor tax invoices — fetch all VendorCompany docs in one query
+    // UNIQUE VENDOR IDS
     const vendorIds = [
-      ...new Set(subOrders.map((o) => o.vandorId?.toString()).filter(Boolean)),
+      ...new Set(subOrders.map((o) => o.vendorId?.toString()).filter(Boolean)),
     ];
+
+    // FETCH ALL VENDOR COMPANY DOCS
     const vendorCompanyDocs = await VendorCompany.find({
       vendorId: { $in: vendorIds },
     }).lean();
+
     const vcMap = new Map(
       vendorCompanyDocs.map((vc) => [vc.vendorId.toString(), vc]),
     );
 
+    // SUB ORDER VENDOR INVOICES
     await Promise.allSettled(
       subOrders.map(async (subOrder) => {
-        const vc = vcMap.get(subOrder.vandorId?.toString()) || {};
-        // Map VendorCompany fields to what buildVendorInvoiceHtml expects
+        const vc = vcMap.get(subOrder.vendorId?.toString()) || {};
+
         const vendorData = {
           businessName: vc.companyName || "Vendor",
           gstNumber: vc.gstNumber || "N/A",
+
           address: [
             vc.businessAddress?.address,
             vc.businessAddress?.city,
@@ -66,9 +128,14 @@ async function generateOrderInvoices(masterOrder, subOrders) {
         };
 
         const vendorPdfUrl = await vendorTaxInvoice(subOrder, vendorData);
+
         await Order.updateOne(
           { _id: subOrder._id },
-          { $set: { invoice: vendorPdfUrl } },
+          {
+            $set: {
+              invoice: vendorPdfUrl,
+            },
+          },
         );
       }),
     );
@@ -99,7 +166,6 @@ const calculateVendorSplit = async (cartItems) => {
 
   return { splitdata, grandTotal };
 };
-
 /* ========================== CREATE ORDER ========================== */
 
 // orderStatus: [
@@ -111,210 +177,626 @@ const calculateVendorSplit = async (cartItems) => {
 //   "DELIVERED",
 //   "CANCELLED"
 // ]
+
+//priyanshu-------->
+// export const createOrder = async (req, res, next) => {
+//   const session = await mongoose.startSession();
+
+//   try {
+//     const userId = req.user._id;
+//     const { shippingAddress, paymentMethod } = req.body;
+//     if (!shippingAddress || !paymentMethod) {
+//       throw new APIError(400, "Shipping address & payment method required");
+//     }
+//     session.startTransaction();
+
+//     const cart = await Cart.findOne({ userId })
+//       .populate({
+//         path: "items.variant",
+//         populate: { path: "productId", model: "Product" },
+//       })
+//       .session(session);
+
+//     if (!cart || cart.items.length === 0) {
+//       throw new APIError(400, "Cart is empty");
+//     }
+
+//     // STOCK VALIDATION
+//     for (const item of cart.items) {
+//       if (item.quantity > item.variant.stock) {
+//         throw new APIError(400, `Out of stock: ${item.variant.productId.name}`);
+//       }
+//     }
+
+//     const { splitdata, grandTotal } = await calculateVendorSplit(cart.items);
+//     // console.log(splitdata)
+//     const DeliveryDate = new Date();
+//     DeliveryDate.setDate(DeliveryDate.getDate() + 7);
+
+//     let paymentStatus = "UNPAID";
+//     let orderStatus = "PENDING";
+
+//     if (paymentMethod === "WALLET") {
+//       const wallet = await Wallet.findOne({ userId }).session(session);
+
+//       if (!wallet || wallet.balance < grandTotal) {
+//         throw new APIError(400, "Insufficient wallet balance");
+//       }
+
+//       wallet.balance -= grandTotal;
+//       await wallet.save({ session });
+//       paymentStatus = "PAID";
+//     }
+//     // CREATE MASTER ORDER
+//     const masterOrder = await Order.create(
+//       [
+//         {
+//           userId,
+//           items: cart.items.map((item) => ({
+//             product: item.variant.productId._id,
+//             variant: item.variant._id,
+//             price: item.unitPrice,
+//             quantity: item.quantity,
+//             status: orderStatus,
+//           })),
+//           totalAmount: grandTotal,
+//           netAmount: grandTotal,
+//           shippingAddress,
+//           status: orderStatus,
+//           paymentStatus,
+//           paymentMethod,
+//           orderType: "MASTER",
+//           deliveredDate: DeliveryDate,
+//         },
+//       ],
+//       { session },
+//     );
+
+//     const masterOrderId = masterOrder[0]._id;
+//     let razorpayOrderDetails = null;
+
+//     if (paymentMethod === "ONLINE") {
+//       const options = {
+//         amount: Math.round(grandTotal * 100),
+//         currency: "INR",
+//         receipt: masterOrderId.toString(),
+//       };
+//       razorpayOrderDetails = await razorpayInstance.orders.create(options);
+//       masterOrder[0].transactionRef = razorpayOrderDetails.id;
+//       await masterOrder[0].save({ session });
+//     }
+
+//     // TRANSACTION
+//     const transaction = await Transaction.create(
+//       [
+//         {
+//           userId,
+//           orderId: masterOrderId,
+//           amount: grandTotal,
+//           paymentMethod,
+//           status: ["COD", "ONLINE"].includes(paymentMethod)
+//             ? "PENDING"
+//             : "SUCCESS",
+//         },
+//       ],
+//       { session },
+//     );
+
+//     // CREATE SUB ORDERS
+//     const subOrderDocs = splitdata.map((data) => ({
+//       userId,
+//       items: data.items.map((item) => ({
+//         product: item.variant.productId._id,
+//         variant: item.variant._id,
+//         price: item.unitPrice,
+//         quantity: item.quantity,
+//         status: orderStatus,
+//         returnInDays: item.variant.productId.returnDays ?? 7,
+//       })),
+//       vendorId: data.vendorId,
+//       totalAmount: data.billSummary.grandTotal,
+//       shippingAddress,
+//       status: orderStatus,
+//       paymentStatus,
+//       paymentMethod,
+//       orderType: "SUB",
+//       parentId: masterOrderId,
+//       transactionId: transaction[0]._id,
+//       deliveredDate: DeliveryDate,
+//     }));
+
+//     await Order.insertMany(subOrderDocs, { session });
+
+//     if (paymentMethod !== "ONLINE") {
+//       const variantOps = [];
+//       const productOps = [];
+
+//       for (const data of splitdata) {
+//         for (const item of data.items) {
+//           variantOps.push({
+//             updateOne: {
+//               filter: { _id: item.variant._id },
+//               update: { $inc: { stock: -item.quantity, sold: item.quantity } },
+//             },
+//           });
+
+//           productOps.push({
+//             updateOne: {
+//               filter: { _id: item.variant.productId._id },
+//               update: { $inc: { sold: item.quantity } },
+//             },
+//           });
+//         }
+//       }
+
+//       await Promise.all([
+//         Variant.bulkWrite(variantOps, { session }),
+//         Product.bulkWrite(productOps, { session }),
+//       ]);
+//     }
+
+//     if (paymentMethod !== "ONLINE") {
+//       await Cart.findOneAndUpdate(
+//         { userId },
+//         { items: [], totalAmount: 0 },
+//         { session },
+//       );
+//     }
+
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     await redis.incr(`user:orders:version:${userId}`).catch(console.error);
+
+//     if (paymentMethod !== "ONLINE") {
+//       sendOrderNotificationToUser(masterOrder[0], "CONFIRMED").catch(
+//         console.error,
+//       );
+
+//       Order.find({ parentId: masterOrderId, orderType: "SUB" })
+//         .lean()
+//         .then((subOrders) => {
+//           subOrders.forEach((sub) =>
+//             sendOrderNotificationToVendor(sub).catch(console.error),
+//           );
+//           // Generate invoices
+//           generateOrderInvoices(masterOrder[0], subOrders);
+//         })
+//         .catch(console.error);
+//     }
+
+//     const responsePayload = {
+//       success: true,
+//       message:
+//         paymentMethod === "ONLINE"
+//           ? "Razorpay order created"
+//           : "Order created successfully",
+//       masterOrder: masterOrder[0],
+//     };
+
+//     if (paymentMethod === "ONLINE") {
+//       responsePayload.razorpayOrder = razorpayOrderDetails;
+//     }
+
+//     return res.status(201).json(responsePayload);
+//   } catch (error) {
+//     try {
+//       await session.abortTransaction();
+//     } catch (abortError) {}
+//     session.endSession();
+//     next(error);
+//   }
+// };
+
+// export const verifyPayment = async (req, res, next) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
+//       req.body;
+//     const userId = req.user.id;
+
+//     const generated = crypto
+//       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+//       .update(razorpay_order_id + "|" + razorpay_payment_id)
+//       .digest("hex");
+
+//     if (generated !== razorpay_signature)
+//       throw new APIError(400, "Payment verification failed");
+
+//     const masterOrder = await Order.findOne({
+//       transactionRef: razorpay_order_id,
+//       orderType: "MASTER",
+//     }).session(session);
+
+//     if (!masterOrder) throw new APIError(404, "Master order not found");
+
+//     const subOrders = await Order.find({
+//       parentId: masterOrder._id,
+//     }).session(session);
+
+//     const transaction = await Transaction.create(
+//       [
+//         {
+//           userId,
+//           orderId: masterOrder._id,
+//           amount: masterOrder.totalAmount,
+//           paymentMethod: "ONLINE",
+//           status: "SUCCESS",
+//           razorpayOrderId: razorpay_order_id,
+//           razorpayPaymentId: razorpay_payment_id,
+//           razorpaySignature: razorpay_signature,
+//         },
+//       ],
+//       { session },
+//     );
+
+//     await Order.updateMany(
+//       { _id: { $in: [masterOrder._id, ...subOrders.map((o) => o._id)] } },
+//       {
+//         $set: {
+//           status: "CONFIRMED",
+//           paymentStatus: "PAID",
+//           transactionId: transaction[0]._id,
+//           "items.$[].status": "CONFIRMED",
+//         },
+//       },
+//       { session },
+//     );
+
+//     const variantOps = [];
+//     const productOps = [];
+
+//     for (const order of subOrders) {
+//       for (const item of order.items) {
+//         variantOps.push({
+//           updateOne: {
+//             filter: { _id: item.variant },
+//             update: { $inc: { stock: -item.quantity, sold: item.quantity } },
+//           },
+//         });
+
+//         productOps.push({
+//           updateOne: {
+//             filter: { _id: item.product },
+//             update: { $inc: { sold: item.quantity } },
+//           },
+//         });
+//       }
+//     }
+//     await Promise.all([
+//       Variant.bulkWrite(variantOps, { session }),
+//       Product.bulkWrite(productOps, { session }),
+//     ]);
+
+//     await Cart.findOneAndUpdate(
+//       { userId },
+//       { items: [], totalAmount: 0 },
+//       { session },
+//     );
+
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     await redis.incr(`user:orders:version:${userId}`);
+
+//     await sendOrderNotificationToUser(masterOrder, "CONFIRMED");
+
+//     subOrders.forEach((sub) =>
+//       sendOrderNotificationToVendor(sub).catch(console.error),
+//     );
+//     generateOrderInvoices(masterOrder, subOrders).catch((err) =>
+//       console.error("[Invoice] Background generation failed:", err.message),
+//     );
+
+//     res.json({
+//       success: true,
+//       message: "Payment verified & order placed",
+//     });
+//   } catch (error) {
+//     try {
+//       await session.abortTransaction();
+//     } catch (abortError) {}
+//     session.endSession();
+//     next(error);
+//   }
+// };
+
+//asgar
+
 export const createOrder = async (req, res, next) => {
   const session = await mongoose.startSession();
+  let transactionRef = null;
+  session.startTransaction();
 
   try {
-    const userId = req.user._id;
-    const { shippingAddress, paymentMethod } = req.body;
-    if (!shippingAddress || !paymentMethod) {
-      throw new APIError(400, "Shipping address & payment method required");
+    const userId = req.user.id;
+    const { addressId, paymentMethod, items } = req.body;
+
+    /**
+     * req.body
+     *
+     * {
+     *   "addressId": "...",
+     *   "paymentMethod": "COD" / "ONLINE",
+     *   "items": [
+     *     {
+     *       "variantId": "...",
+     *       "deliveryType": "vendor"
+     *     }
+     *   ]
+     * }
+     */
+
+    if (!addressId || !paymentMethod || !items?.length) {
+      throw new APIError(
+        400,
+        "addressId, paymentMethod and items are required",
+      );
     }
-    session.startTransaction();
+
+    // ----------------------------------
+    // ADDRESS VALIDATION
+    // ----------------------------------
+
+    const address = await Address.findOne({
+      _id: addressId,
+      userId,
+    }).session(session);
+
+    if (!address) {
+      throw new APIError(404, "Address not found");
+    }
+
+    // ----------------------------------
+    // CART FETCH
+    // ----------------------------------
 
     const cart = await Cart.findOne({ userId })
       .populate({
         path: "items.variant",
-        populate: { path: "productId", model: "Product" },
+        populate: {
+          path: "productId",
+          model: "Product",
+          select: `
+            name
+            images
+            vendorId
+            deliveryCharges
+            shippingCharges
+            measurementUnit
+          `,
+        },
       })
       .session(session);
 
-    if (!cart || cart.items.length === 0) {
+    if (!cart || !cart.items.length) {
       throw new APIError(400, "Cart is empty");
     }
 
+    // ----------------------------------
     // STOCK VALIDATION
-    for (const item of cart.items) {
-      if (item.quantity > item.variant.stock) {
-        throw new APIError(400, `Out of stock: ${item.variant.productId.name}`);
+    // ----------------------------------
+
+    for (const cartItem of cart.items) {
+      if (cartItem.quantity > cartItem.variant.stock) {
+        throw new APIError(
+          400,
+          `Out of stock: ${cartItem.variant.productId.name}`,
+        );
       }
     }
 
-    const { splitdata, grandTotal } = await calculateVendorSplit(cart.items);
-    // console.log(splitdata)
-    const DeliveryDate = new Date();
-    DeliveryDate.setDate(DeliveryDate.getDate() + 7);
+    // ----------------------------------
+    // CALCULATE DELIVERY + TOTAL
+    // ----------------------------------
+
+    let subtotal = 0;
+    let totalDeliveryFee = 0;
+
+    const vendorMap = new Map();
+
+    for (const cartItem of cart.items) {
+      const variant = cartItem.variant;
+      const product = variant.productId;
+
+      const selected = items.find(
+        (i) => i.variantId === variant._id.toString(),
+      );
+
+      if (!selected) continue;
+
+      const itemTotal = cartItem.quantity * cartItem.unitPrice;
+      subtotal += itemTotal;
+
+      let deliveryFee = 0;
+
+      if (selected.deliveryType === "self") {
+        deliveryFee = 0;
+      }
+
+      if (selected.deliveryType === "vendor") {
+        deliveryFee = Number(selected.deliveryFee || 0);
+      }
+
+      if (selected.deliveryType === "logistic") {
+        deliveryFee = Number(selected.deliveryFee || 0);
+      }
+
+      totalDeliveryFee += deliveryFee;
+
+      const vendorId = product.vendorId.toString();
+
+      const preparedItem = {
+        productId: product._id,
+        variantId: variant._id,
+        vendorId: product.vendorId,
+        quantity: cartItem.quantity,
+        price: cartItem.unitPrice,
+        finalPrice: itemTotal,
+        packageWeight: variant.packageWeight || 0,
+        deliveryType: selected.deliveryType,
+        deliveryFee,
+      };
+
+      if (!vendorMap.has(vendorId)) {
+        vendorMap.set(vendorId, []);
+      }
+
+      vendorMap.get(vendorId).push(preparedItem);
+    }
+
+    const grandTotal = subtotal + totalDeliveryFee;
+
+    // ----------------------------------
+    // PAYMENT STATUS
+    // ----------------------------------
 
     let paymentStatus = "UNPAID";
-    let orderStatus = "PENDING";
 
-    if (paymentMethod === "WALLET") {
-      const wallet = await Wallet.findOne({ userId }).session(session);
+    if (paymentMethod === "COD") {
+      paymentStatus = "UNPAID";
+    }
 
-      if (!wallet || wallet.balance < grandTotal) {
-        throw new APIError(400, "Insufficient wallet balance");
+    if (paymentMethod === "ONLINE") {
+      paymentStatus = "UNPAID";
+      // Razorpay order create
+      const options = {
+        amount: Math.round(grandTotal * 100), // paise me
+        currency: "INR",
+        receipt: `order_${Date.now()}`,
+        notes: {
+          userId: userId.toString(),
+        },
+      };
+
+      const razorpayOrder = await razorpayInstance.orders.create(options);
+
+      if (!razorpayOrder) {
+        throw new APIError(400, "Failed to create Razorpay order");
       }
 
-      wallet.balance -= grandTotal;
-      await wallet.save({ session });
-      paymentStatus = "PAID";
+      transactionRef = razorpayOrder.id; // save in master order
     }
-    // CREATE MASTER ORDER
+
+    // ----------------------------------
+    // MASTER ORDER
+    // ----------------------------------
+
     const masterOrder = await Order.create(
       [
         {
           userId,
-          items: cart.items.map((item) => ({
-            product: item.variant.productId._id,
-            variant: item.variant._id,
-            price: item.unitPrice,
-            quantity: item.quantity,
-            status: orderStatus,
-          })),
-          totalAmount: grandTotal,
-          netAmount: grandTotal,
-          shippingAddress,
-          status: orderStatus,
-          paymentStatus,
-          paymentMethod,
           orderType: "MASTER",
-          deliveredDate: DeliveryDate,
+          shippingAddressId: addressId,
+          items: Array.from(vendorMap.values()).flat(),
+          subTotal: subtotal,
+          totalDeliveryFee,
+          netAmount: grandTotal,
+          paymentMethod,
+          paymentStatus,
+          status: "PENDING",
+          transactionRef,
         },
       ],
       { session },
     );
 
     const masterOrderId = masterOrder[0]._id;
-    let razorpayOrderDetails = null;
 
-    if (paymentMethod === "ONLINE") {
-      const options = {
-        amount: Math.round(grandTotal * 100),
-        currency: "INR",
-        receipt: masterOrderId.toString(),
-      };
-      razorpayOrderDetails = await razorpayInstance.orders.create(options);
-      masterOrder[0].transactionRef = razorpayOrderDetails.id;
-      await masterOrder[0].save({ session });
+    // ----------------------------------
+    // SUB ORDERS (Vendor Wise)
+    // ----------------------------------
+
+    const subOrders = [];
+
+    for (const [vendorId, vendorItems] of vendorMap.entries()) {
+      const vendorSubTotal = vendorItems.reduce(
+        (sum, item) => sum + item.finalPrice,
+        0,
+      );
+
+      const vendorDeliveryFee = vendorItems.reduce(
+        (sum, item) => sum + item.deliveryFee,
+        0,
+      );
+
+      subOrders.push({
+        userId,
+        orderType: "SUB",
+        parentId: masterOrderId,
+        shippingAddressId: addressId,
+        items: vendorItems,
+        subTotal: vendorSubTotal,
+        totalDeliveryFee: vendorDeliveryFee,
+        netAmount: vendorSubTotal + vendorDeliveryFee,
+        paymentMethod,
+        paymentStatus,
+        status: "PENDING",
+      });
+    }
+    await Order.insertMany(subOrders, { session });
+
+    // ----------------------------------
+    // STOCK UPDATE
+    // ----------------------------------
+
+    const variantOps = [];
+    const productOps = [];
+
+    for (const cartItem of cart.items) {
+      variantOps.push({
+        updateOne: {
+          filter: { _id: cartItem.variant._id },
+          update: {
+            $inc: {
+              stock: -cartItem.quantity,
+            },
+          },
+        },
+      });
+
+      productOps.push({
+        updateOne: {
+          filter: { _id: cartItem.variant.productId._id },
+          update: {
+            $inc: {
+              sold: cartItem.quantity,
+            },
+          },
+        },
+      });
     }
 
-    // TRANSACTION
-    const transaction = await Transaction.create(
-      [
-        {
-          userId,
-          orderId: masterOrderId,
-          amount: grandTotal,
-          paymentMethod,
-          status: ["COD", "ONLINE"].includes(paymentMethod)
-            ? "PENDING"
-            : "SUCCESS",
-        },
-      ],
+    await Promise.all([
+      Variant.bulkWrite(variantOps, { session }),
+      Product.bulkWrite(productOps, { session }),
+    ]);
+
+    // ----------------------------------
+    // CLEAR CART
+    // ----------------------------------
+
+    await Cart.findOneAndUpdate(
+      { userId },
+      {
+        items: [],
+        totalAmount: 0,
+      },
       { session },
     );
-
-    // CREATE SUB ORDERS
-    const subOrderDocs = splitdata.map((data) => ({
-      userId,
-      items: data.items.map((item) => ({
-        product: item.variant.productId._id,
-        variant: item.variant._id,
-        price: item.unitPrice,
-        quantity: item.quantity,
-        status: orderStatus,
-        returnInDays: item.variant.productId.returnDays ?? 7,
-      })),
-      vendorId: data.vendorId,
-      totalAmount: data.billSummary.grandTotal,
-      shippingAddress,
-      status: orderStatus,
-      paymentStatus,
-      paymentMethod,
-      orderType: "SUB",
-      parentId: masterOrderId,
-      transactionId: transaction[0]._id,
-      deliveredDate: DeliveryDate,
-    }));
-
-    await Order.insertMany(subOrderDocs, { session });
-
-    if (paymentMethod !== "ONLINE") {
-      const variantOps = [];
-      const productOps = [];
-
-      for (const data of splitdata) {
-        for (const item of data.items) {
-          variantOps.push({
-            updateOne: {
-              filter: { _id: item.variant._id },
-              update: { $inc: { stock: -item.quantity, sold: item.quantity } },
-            },
-          });
-
-          productOps.push({
-            updateOne: {
-              filter: { _id: item.variant.productId._id },
-              update: { $inc: { sold: item.quantity } },
-            },
-          });
-        }
-      }
-
-      await Promise.all([
-        Variant.bulkWrite(variantOps, { session }),
-        Product.bulkWrite(productOps, { session }),
-      ]);
-    }
-
-    if (paymentMethod !== "ONLINE") {
-      await Cart.findOneAndUpdate(
-        { userId },
-        { items: [], totalAmount: 0 },
-        { session },
-      );
-    }
 
     await session.commitTransaction();
     session.endSession();
 
-    await redis.incr(`user:orders:version:${userId}`).catch(console.error);
-
-    if (paymentMethod !== "ONLINE") {
-      sendOrderNotificationToUser(masterOrder[0], "CONFIRMED").catch(
-        console.error,
-      );
-
-      Order.find({ parentId: masterOrderId, orderType: "SUB" })
-        .lean()
-        .then((subOrders) => {
-          subOrders.forEach((sub) =>
-            sendOrderNotificationToVendor(sub).catch(console.error),
-          );
-          // Generate invoices
-          generateOrderInvoices(masterOrder[0], subOrders);
-        })
-        .catch(console.error);
-    }
-
-    const responsePayload = {
+    return res.status(201).json({
       success: true,
-      message:
-        paymentMethod === "ONLINE"
-          ? "Razorpay order created"
-          : "Order created successfully",
+      message: "Order created successfully",
       masterOrder: masterOrder[0],
-    };
-
-    if (paymentMethod === "ONLINE") {
-      responsePayload.razorpayOrder = razorpayOrderDetails;
-    }
-
-    return res.status(201).json(responsePayload);
+    });
   } catch (error) {
-    try {
-      await session.abortTransaction();
-    } catch (abortError) {}
+    await session.abortTransaction();
     session.endSession();
     next(error);
   }
@@ -327,33 +809,63 @@ export const verifyPayment = async (req, res, next) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
       req.body;
+
     const userId = req.user.id;
 
-    const generated = crypto
+    // -----------------------------------
+    // VALIDATE INPUT
+    // -----------------------------------
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      throw new APIError(400, "Payment verification details are required");
+    }
+
+    // -----------------------------------
+    // VERIFY RAZORPAY SIGNATURE
+    // -----------------------------------
+
+    const generatedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
-    if (generated !== razorpay_signature)
+    if (generatedSignature !== razorpay_signature) {
       throw new APIError(400, "Payment verification failed");
+    }
+
+    // -----------------------------------
+    // FIND MASTER ORDER
+    // -----------------------------------
 
     const masterOrder = await Order.findOne({
       transactionRef: razorpay_order_id,
       orderType: "MASTER",
+      userId,
     }).session(session);
 
-    if (!masterOrder) throw new APIError(404, "Master order not found");
+    if (!masterOrder) {
+      throw new APIError(404, "Master order not found");
+    }
+
+    // -----------------------------------
+    // FIND SUB ORDERS
+    // -----------------------------------
 
     const subOrders = await Order.find({
       parentId: masterOrder._id,
+      orderType: "SUB",
     }).session(session);
+
+    // -----------------------------------
+    // CREATE TRANSACTION
+    // -----------------------------------
 
     const transaction = await Transaction.create(
       [
         {
           userId,
           orderId: masterOrder._id,
-          amount: masterOrder.totalAmount,
+          amount: masterOrder.netAmount,
           paymentMethod: "ONLINE",
           status: "SUCCESS",
           razorpayOrderId: razorpay_order_id,
@@ -364,78 +876,139 @@ export const verifyPayment = async (req, res, next) => {
       { session },
     );
 
+    const transactionId = transaction[0]._id;
+
+    // -----------------------------------
+    // UPDATE MASTER + SUB ORDERS
+    // -----------------------------------
+
     await Order.updateMany(
-      { _id: { $in: [masterOrder._id, ...subOrders.map((o) => o._id)] } },
+      {
+        _id: {
+          $in: [masterOrder._id, ...subOrders.map((order) => order._id)],
+        },
+      },
       {
         $set: {
-          status: "CONFIRMED",
           paymentStatus: "PAID",
-          transactionId: transaction[0]._id,
-          "items.$[].status": "CONFIRMED",
+          status: "CONFIRMED",
+          transactionId,
+          "items.$[].status": "ACCEPTED",
         },
       },
       { session },
     );
 
+    // -----------------------------------
+    // STOCK REDUCTION
+    // (ONLINE payment ke baad yaha hoga)
+    // -----------------------------------
+
     const variantOps = [];
     const productOps = [];
 
-    for (const order of subOrders) {
-      for (const item of order.items) {
+    for (const subOrder of subOrders) {
+      for (const item of subOrder.items) {
         variantOps.push({
           updateOne: {
-            filter: { _id: item.variant },
-            update: { $inc: { stock: -item.quantity, sold: item.quantity } },
+            filter: {
+              _id: item.variantId,
+            },
+            update: {
+              $inc: {
+                stock: -item.quantity,
+              },
+            },
           },
         });
 
         productOps.push({
           updateOne: {
-            filter: { _id: item.product },
-            update: { $inc: { sold: item.quantity } },
+            filter: {
+              _id: item.productId,
+            },
+            update: {
+              $inc: {
+                sold: item.quantity,
+              },
+            },
           },
         });
       }
     }
-    await Promise.all([
-      Variant.bulkWrite(variantOps, { session }),
-      Product.bulkWrite(productOps, { session }),
-    ]);
+
+    if (variantOps.length) {
+      await Variant.bulkWrite(variantOps, { session });
+    }
+
+    if (productOps.length) {
+      await Product.bulkWrite(productOps, { session });
+    }
+
+    // -----------------------------------
+    // CLEAR CART
+    // -----------------------------------
 
     await Cart.findOneAndUpdate(
       { userId },
-      { items: [], totalAmount: 0 },
+      {
+        items: [],
+        totalAmount: 0,
+      },
       { session },
     );
+
+    // -----------------------------------
+    // COMMIT
+    // -----------------------------------
 
     await session.commitTransaction();
     session.endSession();
 
-    await redis.incr(`user:orders:version:${userId}`);
+    // -----------------------------------
+    // CACHE VERSION UPDATE
+    // -----------------------------------
 
-    await sendOrderNotificationToUser(masterOrder, "CONFIRMED");
+    await redis.incr(`user:orders:version:${userId}`).catch(console.error);
 
-    subOrders.forEach((sub) =>
-      sendOrderNotificationToVendor(sub).catch(console.error),
-    );
+    // -----------------------------------
+    // NOTIFICATIONS
+    // -----------------------------------
+
+    sendOrderNotificationToUser(masterOrder, "CONFIRMED").catch(console.error);
+
+    subOrders.forEach((subOrder) => {
+      sendOrderNotificationToVendor(subOrder).catch(console.error);
+    });
+
     generateOrderInvoices(masterOrder, subOrders).catch((err) =>
-      console.error("[Invoice] Background generation failed:", err.message),
+      console.error("[Invoice Generation Failed]", err.message),
     );
 
-    res.json({
+    // -----------------------------------
+    // RESPONSE
+    // -----------------------------------
+
+    return res.status(200).json({
       success: true,
-      message: "Payment verified & order placed",
+      message: "Payment verified and order placed successfully",
+      data: {
+        masterOrderId: masterOrder._id,
+        paymentId: razorpay_payment_id,
+        paymentStatus: "PAID",
+        orderStatus: "CONFIRMED",
+      },
     });
   } catch (error) {
     try {
       await session.abortTransaction();
     } catch (abortError) {}
+
     session.endSession();
     next(error);
   }
 };
 
-// by user
 export const getAllOrders = async (req, res, next) => {
   try {
     const userId = req.user._id;
@@ -1300,7 +1873,6 @@ export const updateAllProductsStatus = async (req, res, next) => {
 };
 
 import { shippingQueue } from "../../config/bullmq.config.js";
-
 export const createShippingLabel = async (req, res, next) => {
   try {
     const { orderId } = req.params;
@@ -1323,7 +1895,6 @@ export const createShippingLabel = async (req, res, next) => {
   }
 };
 
-//asgr
 import { addSettlement } from "../vendorShop/vendorWallet.controller.js";
 export const updateOrderToDelivered = async (req, res, next) => {
   const { orderId } = req.params;
@@ -1366,374 +1937,3 @@ export const updateOrderToDelivered = async (req, res, next) => {
     });
   }
 };
-
-import addressModel from "../../models/user/address.model.js";
-import { getDistanceInKm } from "../../utils/getDistanceInKm.js";
-
-export const checkoutPreview = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { addressId } = req.body;
-
-    const cart = await Cart.findOne({ userId }).populate("items.product");
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({ message: "Cart is empty" });
-    }
-    const address = await addressModel.findById(addressId);
-    if (!address) {
-      return res.status(404).json({ message: "Address not found" });
-    }
-    const userPincode = address.pincode;
-
-    const grouped = {};
-    for (let item of cart.items) {
-      const vendorId = item.product.vendorId.toString();
-      if (!grouped[vendorId]) grouped[vendorId] = [];
-      grouped[vendorId].push(item);
-    }
-    const result = [];
-
-    for (let vendorId in grouped) {
-      const vendor = await VendorCompany.findById(vendorId);
-      const isServiceable = vendor.serviceArea?.pinCodes?.includes(userPincode);
-      let options = ["SELF", "LOGISTIC"];
-
-      if (isServiceable) {
-        options.push("VENDOR");
-      }
-
-      result.push({
-        vendorId,
-        items: grouped[vendorId],
-        availableDeliveryOptions: options,
-      });
-    }
-    return res.json({
-      success: true,
-      data: result,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
-// //response -
-// [
-//   {
-//     "vendorId": "A",
-//     "availableDeliveryOptions": ["SELF", "LOGISTIC", "VENDOR"]
-//   },
-//   {
-//     "vendorId": "B",
-//     "availableDeliveryOptions": ["SELF", "LOGISTIC"]
-//   }
-// ]
-
-//calculate deliveryfee frontend input
-//{
-//   "addressId": "123",
-//   "vendors": [
-//     { "vendorId": "A", "deliveryType": "LOGISTIC" },
-//     { "vendorId": "B", "deliveryType": "SELF" }
-//   ]
-// }
-
-export const calculateDelivery = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { addressId, vendors } = req.body;
-
-    if (!vendors || vendors.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No delivery selection provided",
-      });
-    }
-
-    const cart = await Cart.findOne({ userId }).populate("items.product");
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Cart is empty",
-      });
-    }
-
-    const address = await addressModel.findById(addressId);
-    if (!address) {
-      return res.status(404).json({
-        success: false,
-        message: "Address not found",
-      });
-    }
-
-    const userPincode = Number(address.pincode);
-    const grouped = {};
-    for (let item of cart.items) {
-      const vendorId = item.product.vendorId.toString();
-      if (!grouped[vendorId]) grouped[vendorId] = [];
-      grouped[vendorId].push(item);
-    }
-
-    const vendorIds = vendors.map((v) => v.vendorId);
-    
-    const vendorDocs = await VendorCompany.find({
-      _id: { $in: vendorIds },
-    });
-
-    const vendorMap = {};
-    vendorDocs.forEach((v) => {
-      vendorMap[v._id.toString()] = v;
-    });
-
-    // 6. calculate cost
-    let totalDeliveryCost = 0;
-    const breakdown = [];
-
-    for (let v of vendors) {
-      const { vendorId, deliveryType } = v;
-
-      if (!grouped[vendorId]) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid vendor ${vendorId}`,
-        });
-      }
-
-      const vendor = vendorMap[vendorId];
-
-      const isServiceable =
-        vendor?.serviceArea?.pinCodes?.includes(userPincode);
-
-      let allowedOptions = ["SELF", "LOGISTIC"];
-      if (isServiceable) {
-        allowedOptions.push("VENDOR");
-      }
-
-      if (!allowedOptions.includes(deliveryType)) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid deliveryType for vendor ${vendorId}`,
-        });
-      }
-
-      const distance = getDistanceInKm(
-        address.location.coordinates[1],
-        address.location.coordinates[0],
-        vendor.location.coordinates[1],
-        vendor.location.coordinates[0],
-      );
-
-      let deliveryCost = 0;
-
-      if (deliveryType === "SELF") {
-        deliveryCost = 0;
-      }
-
-      if (deliveryType === "VENDOR") {
-        deliveryCost = 50 + grouped[vendorId].length * 10;
-      }
-
-      if (deliveryType === "LOGISTIC") {
-        const base = 40;
-        const perKm = 6;
-        const perItem = 10;
-
-        deliveryCost =
-          base + distance * perKm + grouped[vendorId].length * perItem;
-      }
-
-      totalDeliveryCost += deliveryCost;
-
-      breakdown.push({
-        vendorId,
-        deliveryType,
-        distance: Number(distance.toFixed(2)),
-        items: grouped[vendorId].length,
-        cost: deliveryCost,
-      });
-    }
-
-    return res.json({
-      success: true,
-      totalDeliveryCost,
-      breakdown,
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
-  }
-};
-
-// {
-//   "success": true,
-//   "totalDeliveryCost": 180,
-//   "breakdown": [
-//     {
-//       "vendorId": "A",
-//       "deliveryType": "LOGISTIC",
-//       "distance": 5.2,
-//       "items": 2,
-//       "cost": 120
-//     },
-//     {
-//       "vendorId": "B",
-//       "deliveryType": "SELF",
-//       "distance": 2.1,
-//       "items": 1,
-//       "cost": 0
-//     }
-//   ]
-// }
-export const getOrderSummary = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { addressId, vendors } = req.body;
-
-    // 1. cart fetch
-    const cart = await Cart.findOne({ userId }).populate("items.product");
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Cart is empty",
-      });
-    }
-
-    // 2. address
-    const address = await addressModel.findById(addressId);
-    if (!address) {
-      return res.status(404).json({
-        success: false,
-        message: "Address not found",
-      });
-    }
-
-    const userPincode = Number(address.pincode);
-
-    // 3. group items vendor-wise
-    const grouped = {};
-    let totalAmount = 0;
-
-    for (let item of cart.items) {
-      const vendorId = item.product.vendorId.toString();
-
-      if (!grouped[vendorId]) grouped[vendorId] = [];
-
-      grouped[vendorId].push(item);
-
-      // 🧾 product total
-      totalAmount += item.price * item.quantity;
-    }
-
-    // 4. vendor fetch
-    const vendorIds = vendors.map((v) => v.vendorId);
-    const vendorDocs = await VendorCompany.find({
-      _id: { $in: vendorIds },
-    });
-
-    const vendorMap = {};
-    vendorDocs.forEach((v) => {
-      vendorMap[v._id.toString()] = v;
-    });
-
-    // 5. delivery calculation
-    let totalDeliveryCost = 0;
-    const deliveryBreakdown = [];
-
-    for (let v of vendors) {
-      const { vendorId, deliveryType } = v;
-
-      const vendor = vendorMap[vendorId];
-
-      const isServiceable =
-        vendor?.serviceArea?.pinCodes?.includes(userPincode);
-
-      let allowedOptions = ["SELF", "LOGISTIC"];
-      if (isServiceable) allowedOptions.push("VENDOR");
-
-      if (!allowedOptions.includes(deliveryType)) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid deliveryType for vendor ${vendorId}`,
-        });
-      }
-
-      // distance
-      const distance = getDistanceInKm(
-        address.location.coordinates[1],
-        address.location.coordinates[0],
-        vendor.location.coordinates[1],
-        vendor.location.coordinates[0],
-      );
-
-      let cost = 0;
-
-      if (deliveryType === "SELF") cost = 0;
-
-      if (deliveryType === "VENDOR") {
-        cost = 50 + grouped[vendorId].length * 10;
-      }
-
-      if (deliveryType === "LOGISTIC") {
-        cost = 40 + distance * 6 + grouped[vendorId].length * 10;
-      }
-
-      totalDeliveryCost += cost;
-
-      deliveryBreakdown.push({
-        vendorId,
-        deliveryType,
-        distance: Number(distance.toFixed(2)),
-        items: grouped[vendorId].length,
-        cost,
-      });
-    }
-
-    // 6. FINAL BILL
-    const grandTotal = totalAmount + totalDeliveryCost;
-
-    return res.json({
-      success: true,
-      bill: {
-        itemsTotal: totalAmount,
-        deliveryTotal: totalDeliveryCost,
-        grandTotal,
-      },
-      deliveryBreakdown,
-      totalItems: cart.items.length,
-      address,
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
-  }
-};
-//response -
-// {
-//   "success": true,
-//   "bill": {
-//     "itemsTotal": 1200,
-//     "deliveryTotal": 180,
-//     "grandTotal": 1380
-//   },
-//   "deliveryBreakdown": [
-//     {
-//       "vendorId": "A",
-//       "deliveryType": "LOGISTIC",
-//       "distance": 5.2,
-//       "items": 2,
-//       "cost": 120
-//     },
-//     {
-//       "vendorId": "B",
-//       "deliveryType": "SELF",
-//       "distance": 2.1,
-//       "items": 1,
-//       "cost": 0
-//     }
-//   ],
-//   "totalItems": 3,
-//   "address": { ... }
-// }

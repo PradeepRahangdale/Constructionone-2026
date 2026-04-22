@@ -7,6 +7,7 @@ import Variant from "../../models/vendorShop/variant.model.js";
 import Product from "../../models/vendorShop/product.model.js";
 import Address from "../../models/user/address.model.js";
 import redis from "../../config/redis.config.js";
+import { getDistanceInKm } from "../../utils/getDistanceInKm.js";
 
 export const addToCart = async (req, res, next) => {
   try {
@@ -393,7 +394,8 @@ export const similarProducts = async (req, res, next) => {
 // GET /cart/distances?addressId=123
 export const getCartWithDistances = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // const userId = req.user.id;
+    const userId = "6992ebf155e45f668bce5b09";
     const { addressId } = req.query;
 
     // 1. Get User Address
@@ -472,4 +474,398 @@ export const getCartWithDistances = async (req, res) => {
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
+};
+
+export const checkoutPreview = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { addressId } = req.body;
+
+    if (!addressId) {
+      throw new APIError(400, "addressId is required");
+    }
+
+    // user selected address check
+    const address = await Address.findOne({
+      _id: addressId,
+      userId,
+    });
+
+    if (!address) {
+      throw new APIError(404, "Address not found");
+    }
+
+    // get cart
+    const cart = await Cart.findOne({ userId }).populate({
+      path: "items.variant",
+      populate: {
+        path: "productId",
+        model: "Product",
+        select: `
+          name
+          slug
+          images
+          serviceableDeliveryPincode
+          deliveryOptions
+          deliveryCharges
+          shippingCharges
+          vendorLocation
+        `,
+      },
+    });
+
+    if (!cart || !cart.items.length) {
+      throw new APIError(400, "Cart is empty");
+    }
+
+    const responseItems = [];
+
+    for (const item of cart.items) {
+      const variant = item.variant;
+      const product = variant.productId;
+
+      let availableDeliveryTypes = ["self", "logistic"];
+
+      // vendor delivery check by pincode
+      const isVendorAvailable = product.serviceableDeliveryPincode?.includes(
+        String(address.pincode),
+      );
+
+      if (isVendorAvailable) {
+        availableDeliveryTypes.push("vendor");
+      }
+
+      responseItems.push({
+        itemId: item._id,
+        productId: product._id,
+        variantId: variant._id,
+        productName: product.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
+        availableDeliveryTypes,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Select delivery type for products",
+      address: {
+        addressId: address._id,
+        pincode: address.pincode,
+      },
+      items: responseItems,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// METHOD 2: SELECT DELIVERY TYPE → SHOW DELIVERY FEE
+// ============================================
+
+export const calculateDeliveryFee = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { addressId, items } = req.body;
+
+    /**
+     * req.body
+     *
+     * {
+     *   "addressId": "...",
+     *   "items": [
+     *     {
+     *       "variantId": "...",
+     *       "deliveryType": "vendor"
+     *     }
+     *   ]
+     * }
+     */
+
+    if (!addressId || !items?.length) {
+      throw new APIError(400, "addressId and items are required");
+    }
+
+    const address = await Address.findOne({
+      _id: addressId,
+      userId,
+    });
+
+    if (!address) {
+      throw new APIError(404, "Address not found");
+    }
+    const cart = await Cart.findOne({ userId }).populate({
+      path: "items.variant",
+      populate: {
+        path: "productId",
+        model: "Product",
+        select: `
+      name images
+      shippingCharges
+      deliveryCharges
+      vendorLocation
+      vendorId
+      deliveryOptions
+      serviceableDeliveryPincode
+        `,
+      },
+    });
+
+    if (!cart || !cart.items.length) {
+      throw new APIError(400, "Cart is empty");
+    }
+
+    let subtotal = 0;
+    let totalDeliveryFee = 0;
+    const finalItems = [];
+
+    for (const cartItem of cart.items) {
+      const variant = cartItem.variant;
+      const product = variant.productId;
+      const selected = items.find(
+        (i) => i.variantId === variant._id.toString(),
+      );
+
+      if (!selected) continue;
+
+      const itemTotal = cartItem.quantity * cartItem.unitPrice;
+      subtotal += itemTotal;
+      const result = await calculateSingleItemDeliveryFee({
+        product,
+        variant,
+        quantity: cartItem.quantity,
+        userAddress: address.location,
+        deliveryType: selected.deliveryType,
+      });
+      totalDeliveryFee += result.deliveryFee;
+
+      finalItems.push({
+        productId: product._id,
+        variantId: variant._id,
+        productName: product.name,
+        vendorId: product.vendorId,
+        productImage: product.images,
+        quantity: cartItem.quantity,
+        itemTotal,
+        deliveryType: selected.deliveryType,
+        durationTime: result.duration,
+
+        distance: {
+          km: result.distanceKm || 0,
+          meter: result.distanceMeter || 0,
+        },
+        deliveryFee: result.deliveryFee,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Delivery fee calculated successfully",
+
+      billSummary: {
+        subtotal,
+        deliveryFee: totalDeliveryFee,
+        grandTotal: subtotal + totalDeliveryFee,
+      },
+      items: finalItems,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+import { VendorCompany } from "../../models/vendorShop/vendor.model.js";
+import logger from "../../utils/logger.js";
+
+export const calculateSingleItemDeliveryFee = async ({
+  product,
+  variant,
+  quantity,
+  userAddress,
+  deliveryType,
+}) => {
+  let deliveryFee = 0;
+  let distanceKm = 0;
+  let distanceMeter = 0;
+  let duration = "";
+
+  // self pickup
+  if (deliveryType === "self") {
+    return {
+      deliveryFee: 0,
+      distanceKm,
+      distanceMeter,
+      duration,
+    };
+  }
+
+  // free delivery
+  if (product.deliveryCharges === "free") {
+    return {
+      deliveryFee: 0,
+      distanceKm,
+      distanceMeter,
+      duration,
+    };
+  }
+
+  const shipping = product.shippingCharges || {};
+
+  // =========================
+  // vendor company location fetch
+  // =========================
+
+  const vendorCompany = await VendorCompany.findOne({
+    vendorId: product.vendorId,
+  })
+    .select("businessAddress")
+    .lean();
+
+  let vendorLat = null;
+  let vendorLng = null;
+
+  if (
+    vendorCompany?.businessAddress?.latitude &&
+    vendorCompany?.businessAddress?.longitude
+  ) {
+    vendorLat = vendorCompany.businessAddress.latitude;
+    vendorLng = vendorCompany.businessAddress.longitude;
+  }
+
+  let userCoordinates = [userAddress.lng, userAddress.lat];
+
+  if (
+    vendorLat !== null &&
+    vendorLng !== null &&
+    userCoordinates.length === 2
+  ) {
+    const roadDistance = await getDistanceInKm(
+      vendorLat,
+      vendorLng,
+      userCoordinates[1], // lat
+      userCoordinates[0], // lng
+    );
+
+    // distanceMeter = Math.round(distanceKm * 1000);
+    // distanceKm = Number(distanceKm.toFixed(2));
+
+    distanceKm = roadDistance.distanceKm;
+    distanceMeter = roadDistance.distanceMeter;
+    duration = roadDistance.durationText || "";
+  }
+
+  // =========================
+  // measurementUnit based logic
+  // =========================
+
+  // switch (product.measurementUnit) {
+  //   case "kg":
+  //     deliveryFee =
+  //       Number(shipping.fixed || 0) +
+  //       Number(distanceKm * (shipping.distancePerKm || 0)) +
+  //       Number(
+  //         (variant.packageWeight || 0) * quantity * (shipping.weightPerKg || 0),
+  //       );
+  //     break;
+
+  //   case "cubicmeter":
+  //     deliveryFee =
+  //       Number(shipping.fixed || 0) +
+  //       Number(distanceKm * (shipping.distancePerKm || 0)) +
+  //       Number(quantity * (shipping.volumePerCubicMeter || 0));
+  //     break;
+
+  //   case "meter":
+  //   case "supermeter":
+  //     deliveryFee =
+  //       Number(shipping.fixed || 0) +
+  //       Number(distanceKm * (shipping.distancePerKm || 0)) +
+  //       Number(quantity * (shipping.perMeterCharge || 0));
+  //     break;
+
+  //   default:
+  //     deliveryFee =
+  //       Number(shipping.fixed || 0) +
+  //       Number(distanceKm * (shipping.distancePerKm || 0)) +
+  //       Number(quantity * (shipping.perPieceCharge || 0));
+  // }
+
+  switch (product.measurementUnit) {
+    case "kg":
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(
+          (variant.packageWeight || 0) *
+            quantity *
+            Number(shipping.weightPerKg || 0),
+        );
+      break;
+
+    case "liter":
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(quantity * Number(shipping.perLiterCharge || 0));
+      break;
+
+    case "meter":
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(quantity * Number(shipping.perMeterCharge || 0));
+      break;
+
+    case "supermeter":
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(quantity * Number(shipping.perSuperMeterCharge || 0));
+      break;
+
+    case "cubicmeter":
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(quantity * Number(shipping.perCubicMeterCharge || 0));
+      break;
+
+    case "box":
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(quantity * Number(shipping.perBoxCharge || 0));
+      break;
+
+    case "set":
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(quantity * Number(shipping.perSetCharge || 0));
+      break;
+
+    case "roll":
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(quantity * Number(shipping.perRollCharge || 0));
+      break;
+
+    case "piece":
+    default:
+      deliveryFee =
+        Number(shipping.fixed || 0) +
+        Number(distanceKm * Number(shipping.distancePerKm || 0)) +
+        Number(quantity * Number(shipping.perPieceCharge || 0));
+      break;
+  }
+
+  return {
+    deliveryFee: Math.round(deliveryFee),
+    distanceKm,
+    distanceMeter,
+    duration,
+  };
 };
