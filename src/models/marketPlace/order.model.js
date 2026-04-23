@@ -236,6 +236,7 @@ const orderItemSchema = new mongoose.Schema(
       type: String,
       enum: [
         "PENDING",
+        "CONFIRMED",
         "ACCEPTED",
         "PACKED",
         "SHIPPED",
@@ -301,7 +302,7 @@ const orderSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: ["COD", "ONLINE"],
+      enum: ["COD", "ONLINE", "WALLET"],
     },
     transactionRef: String,
     labelUrl: String,

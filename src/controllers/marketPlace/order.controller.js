@@ -95,11 +95,65 @@ async function generateOrderInvoices(masterOrder, subOrders) {
     );
 
     // UNIQUE VENDOR IDS
+    // const vendorIds = [
+    //   ...new Set(subOrders.map((o) => o.vendorId?.toString()).filter(Boolean)),
+    // ];
+
     const vendorIds = [
-      ...new Set(subOrders.map((o) => o.vendorId?.toString()).filter(Boolean)),
+      ...new Set(
+        subOrders
+          .map((o) => o.items?.[0]?.vendorId?.toString())
+          .filter(Boolean),
+      ),
     ];
 
     // FETCH ALL VENDOR COMPANY DOCS
+    // const vendorCompanyDocs = await VendorCompany.find({
+    //   vendorId: { $in: vendorIds },
+    // }).lean();
+
+    // const vcMap = new Map(
+    //   vendorCompanyDocs.map((vc) => [vc.vendorId.toString(), vc]),
+    // );
+
+    // // SUB ORDER VENDOR INVOICES
+    // await Promise.allSettled(
+    //   subOrders.map(async (subOrder) => {
+
+    //     //asgr
+    //     const vendorId = subOrder.items?.[0]?.vendorId?.toString();
+    //     const vc = vcMap.get(vendorId) || {};
+
+    //     //old
+    //     // const vc = vcMap.get(subOrder.vendorId?.toString()) || {};
+
+    //     const vendorData = {
+    //       businessName: vc.companyName || "Vendor",
+    //       gstNumber: vc.gstNumber || "N/A",
+
+    //       address: [
+    //         vc.businessAddress?.address,
+    //         vc.businessAddress?.city,
+    //         vc.businessAddress?.state,
+    //         vc.businessAddress?.pincode,
+    //       ]
+    //         .filter(Boolean)
+    //         .join(", "),
+    //     };
+
+    //     const vendorPdfUrl = await vendorTaxInvoice(subOrder, vendorData);
+
+    //     await Order.updateOne(
+    //       { _id: subOrder._id },
+    //       {
+    //         $set: {
+    //           invoice: vendorPdfUrl,
+    //         },
+    //       },
+    //     );
+    //   }),
+    // );
+
     const vendorCompanyDocs = await VendorCompany.find({
       vendorId: { $in: vendorIds },
     }).lean();
@@ -108,10 +162,11 @@ async function generateOrderInvoices(masterOrder, subOrders) {
       vendorCompanyDocs.map((vc) => [vc.vendorId.toString(), vc]),
     );
 
-    // SUB ORDER VENDOR INVOICES
     await Promise.allSettled(
       subOrders.map(async (subOrder) => {
-        const vc = vcMap.get(subOrder.vendorId?.toString()) || {};
+        const vendorId = subOrder.items?.[0]?.vendorId?.toString();
+
+        const vc = vcMap.get(vendorId) || {};
 
         const vendorData = {
           businessName: vc.companyName || "Vendor",
@@ -508,6 +563,8 @@ const calculateVendorSplit = async (cartItems) => {
 export const createOrder = async (req, res, next) => {
   const session = await mongoose.startSession();
   let transactionRef = null;
+  let transactionId = null;
+
   session.startTransaction();
 
   try {
@@ -524,6 +581,7 @@ export const createOrder = async (req, res, next) => {
      *     {
      *       "variantId": "...",
      *       "deliveryType": "vendor"
+     * "delevryFee": "50"
      *     }
      *   ]
      * }
@@ -649,41 +707,7 @@ export const createOrder = async (req, res, next) => {
 
     const grandTotal = subtotal + totalDeliveryFee;
 
-    // ----------------------------------
-    // PAYMENT STATUS
-    // ----------------------------------
-
     let paymentStatus = "UNPAID";
-
-    if (paymentMethod === "COD") {
-      paymentStatus = "UNPAID";
-    }
-
-    if (paymentMethod === "ONLINE") {
-      paymentStatus = "UNPAID";
-      // Razorpay order create
-      const options = {
-        amount: Math.round(grandTotal * 100), // paise me
-        currency: "INR",
-        receipt: `order_${Date.now()}`,
-        notes: {
-          userId: userId.toString(),
-        },
-      };
-
-      const razorpayOrder = await razorpayInstance.orders.create(options);
-
-      if (!razorpayOrder) {
-        throw new APIError(400, "Failed to create Razorpay order");
-      }
-
-      transactionRef = razorpayOrder.id; // save in master order
-    }
-
-    // ----------------------------------
-    // MASTER ORDER
-    // ----------------------------------
-
     const masterOrder = await Order.create(
       [
         {
@@ -705,6 +729,157 @@ export const createOrder = async (req, res, next) => {
 
     const masterOrderId = masterOrder[0]._id;
 
+    if (paymentMethod === "WALLET") {
+      const wallet = await Wallet.findOne({ userId }).session(session);
+
+      if (!wallet) {
+        throw new APIError(404, "Wallet not found");
+      }
+
+      if (wallet.balance < grandTotal) {
+        throw new APIError(400, "Insufficient wallet balance");
+      }
+
+      // deduct wallet amount
+      wallet.balance -= grandTotal;
+      await wallet.save({ session });
+
+      paymentStatus = "PAID";
+      orderStatus = "CONFIRMED";
+
+      // transaction entry
+      const transaction = await Transaction.create(
+        [
+          {
+            userId,
+            orderId: masterOrderId,
+            amount: grandTotal,
+            paymentMethod: "WALLET",
+            status: "SUCCESS",
+          },
+        ],
+        { session },
+      );
+
+      transactionId = transaction[0]._id;
+      // master order update
+      await Order.findByIdAndUpdate(
+        masterOrderId,
+        {
+          paymentStatus: "PAID",
+          status: "CONFIRMED",
+          transactionId,
+          "items.$[].status": "CONFIRMED",
+        },
+        { session },
+      );
+      // sub orders update
+      await Order.updateMany(
+        {
+          parentId: masterOrderId,
+          orderType: "SUB",
+        },
+        {
+          $set: {
+            paymentStatus: "PAID",
+            status: "CONFIRMED",
+            transactionId,
+            "items.$[].status": "CONFIRMED",
+          },
+        },
+        { session },
+      );
+
+      // stock update
+      const variantOps = [];
+      const productOps = [];
+
+      for (const items of vendorMap.values()) {
+        for (const item of items) {
+          variantOps.push({
+            updateOne: {
+              filter: { _id: item.variantId },
+              update: {
+                $inc: {
+                  stock: -item.quantity,
+                  sold: item.quantity,
+                },
+              },
+            },
+          });
+
+          productOps.push({
+            updateOne: {
+              filter: { _id: item.productId },
+              update: {
+                $inc: {
+                  sold: item.quantity,
+                },
+              },
+            },
+          });
+        }
+      }
+
+      if (variantOps.length) {
+        await Variant.bulkWrite(variantOps, { session });
+      }
+
+      if (productOps.length) {
+        await Product.bulkWrite(productOps, { session });
+      }
+
+      // clear cart
+      await Cart.findOneAndUpdate(
+        { userId },
+        {
+          items: [],
+          totalAmount: 0,
+        },
+        { session },
+      );
+    } else if (paymentMethod === "ONLINE") {
+      paymentStatus = "UNPAID";
+      // Razorpay order create
+      const options = {
+        amount: Math.round(grandTotal * 100), // paise me
+        currency: "INR",
+        receipt: `order_${Date.now()}`,
+        notes: {
+          userId: userId.toString(),
+        },
+      };
+      const razorpayOrder = await razorpayInstance.orders.create(options);
+
+      if (!razorpayOrder) {
+        throw new APIError(400, "Failed to create Razorpay order");
+      }
+
+      transactionRef = razorpayOrder.id; // save in master order
+    }
+
+    // ----------------------------------
+    // MASTER ORDER
+    // ----------------------------------
+    // const masterOrder = await Order.create(
+    //   [
+    //     {
+    //       userId,
+    //       orderType: "MASTER",
+    //       shippingAddressId: addressId,
+    //       items: Array.from(vendorMap.values()).flat(),
+    //       subTotal: subtotal,
+    //       totalDeliveryFee,
+    //       netAmount: grandTotal,
+    //       paymentMethod,
+    //       paymentStatus,
+    //       status: "PENDING",
+    //       transactionRef,
+    //     },
+    //   ],
+    //   { session },
+    // );
+    // const masterOrderId = masterOrder[0]._id;
     // ----------------------------------
     // SUB ORDERS (Vendor Wise)
     // ----------------------------------
@@ -789,6 +964,12 @@ export const createOrder = async (req, res, next) => {
 
     await session.commitTransaction();
     session.endSession();
+
+    if (paymentStatus === "PAID") {
+      generateOrderInvoices(masterOrder, subOrders).catch((err) =>
+        console.error("[Invoice Generation Failed]", err.message),
+      );
+    }
 
     return res.status(201).json({
       success: true,
@@ -875,7 +1056,6 @@ export const verifyPayment = async (req, res, next) => {
       ],
       { session },
     );
-
     const transactionId = transaction[0]._id;
 
     // -----------------------------------
@@ -1009,31 +1189,100 @@ export const verifyPayment = async (req, res, next) => {
   }
 };
 
+// export const getAllOrders = async (req, res, next) => {
+//   try {
+//     const userId = req.user.id;
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 10;
+//     const skip = (page - 1) * limit;
+
+//     // Version-based cache: incr version on any order change — no redis.keys() needed
+//     const version = (await redis.get(`user:orders:version:${userId}`)) || 1;
+//     const cacheKey = `orders:user:${userId}:v${version}:${JSON.stringify(req.query)}`;
+
+//     const cached = await redis.get(cacheKey);
+//     if (cached) {
+//       return res.status(200).json(JSON.parse(cached));
+//     }
+//     const filter = { userId, orderType: "MASTER" };
+//     if (req.query.status) filter.status = req.query.status;
+
+//     const [orders, total] = await Promise.all([
+//       Order.find(filter)
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limit)
+//         .populate({ path: "items.product", select: "name thumbnail " })
+//         .lean(),
+//       Order.countDocuments(filter),
+//     ]);
+
+//     const response = {
+//       success: true,
+//       message: "Orders fetched successfully",
+//       data: {
+//         orders,
+//         pagination: {
+//           total,
+//           page,
+//           limit,
+//           totalPages: Math.ceil(total / limit),
+//         },
+//       },
+//     };
+
+//     await redis.set(cacheKey, JSON.stringify(response), "EX", 300);
+
+//     res.status(200).json(response);
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+
 export const getAllOrders = async (req, res, next) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Version-based cache: incr version on any order change — no redis.keys() needed
     const version = (await redis.get(`user:orders:version:${userId}`)) || 1;
-    const cacheKey = `orders:user:${userId}:v${version}:${JSON.stringify(req.query)}`;
+
+    const cacheKey = `orders:user:${userId}:v${version}:${JSON.stringify(
+      req.query,
+    )}`;
 
     const cached = await redis.get(cacheKey);
+
     if (cached) {
       return res.status(200).json(JSON.parse(cached));
     }
-    const filter = { userId, orderType: "MASTER" };
-    if (req.query.status) filter.status = req.query.status;
+
+    const filter = {
+      userId,
+      orderType: "MASTER",
+    };
+
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
 
     const [orders, total] = await Promise.all([
       Order.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .populate({ path: "items.product", select: "name thumbnail " })
+        .populate({
+          path: "items.productId",
+          select: "name images subCategoryId productTypeId",
+        })
+        .populate({
+          path: "shippingAddressId",
+          select:
+            "label userName addressLine country city state pincode landMark",
+        })
         .lean(),
+
       Order.countDocuments(filter),
     ]);
 
@@ -1051,94 +1300,238 @@ export const getAllOrders = async (req, res, next) => {
       },
     };
 
-    await redis.set(cacheKey, JSON.stringify(response), "EX", 300);
+    await redis.set(cacheKey, JSON.stringify(response));
 
-    res.status(200).json(response);
+    return res.status(200).json(response);
   } catch (error) {
     next(error);
   }
 };
-
 /* ========================== GET ALL ORDERS BY VENDOR ========================== */
+// export const getOrdersByVendor = async (req, res, next) => {
+//   try {
+//     const vandorId = req.params.vendorId;
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 10;
+//     const skip = (page - 1) * limit;
+
+//     // Version-based cache: incr version on any status change — no redis.keys() needed
+//     const version = (await redis.get(`vendor:orders:version:${vandorId}`)) || 1;
+//     const cacheKey = `orders:vendor:${vandorId}:v${version}:${JSON.stringify(req.query)}`;
+//     const cached = await redis.get(cacheKey);
+//     if (cached) return res.status(200).json(JSON.parse(cached));
+
+//     const filter = { vandorId, orderType: "SUB" };
+//     if (req.query.status) filter.status = req.query.status;
+//     if (req.query.paymentStatus) filter.paymentStatus = req.query.paymentStatus;
+
+//     const now = new Date();
+
+//     const dateRangeMap = {
+//       today: () => {
+//         const start = new Date(now);
+//         start.setHours(0, 0, 0, 0);
+//         return { $gte: start };
+//       },
+//       last7days: () => {
+//         const start = new Date(now);
+//         start.setDate(start.getDate() - 7);
+//         return { $gte: start };
+//       },
+//       last30days: () => {
+//         const start = new Date(now);
+//         start.setDate(start.getDate() - 30);
+//         return { $gte: start };
+//       },
+//       last90days: () => {
+//         const start = new Date(now);
+//         start.setDate(start.getDate() - 90);
+//         return { $gte: start };
+//       },
+//       custom: () => {
+//         const range = {};
+//         if (req.query.startDate) range.$gte = new Date(req.query.startDate);
+//         if (req.query.endDate) {
+//           const end = new Date(req.query.endDate);
+//           end.setHours(23, 59, 59, 999);
+//           range.$lte = end;
+//         }
+//         return Object.keys(range).length ? range : null;
+//       },
+//     };
+
+//     const { dateRange } = req.query;
+//     if (dateRange && dateRangeMap[dateRange]) {
+//       const range = dateRangeMap[dateRange]();
+//       if (range) filter.createdAt = range;
+//     }
+
+//     // ── Base filter for stats (aggregate needs ObjectId, not string) ──
+//     const statsFilter = {
+//       vandorId: new mongoose.Types.ObjectId(vandorId),
+//       orderType: "SUB",
+//     };
+
+//     const [orders, total, revenueResult, pendingCount] = await Promise.all([
+//       // 1. Paginated orders list
+//       Order.find(filter)
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limit)
+//         .populate({ path: "items.product", select: "name thumbnail" })
+//         .populate({ path: "items.variant", select: "size price stock" })
+//         .lean(),
+
+//       // 2. Total orders matching filter (for pagination)
+//       Order.countDocuments(filter),
+
+//       // 3. Total revenue — only PAID + DELIVERED orders
+//       Order.aggregate([
+//         {
+//           $match: {
+//             ...statsFilter,
+//             paymentStatus: "PAID",
+//             status: "DELIVERED",
+//           },
+//         },
+//         {
+//           $group: {
+//             _id: null,
+//             totalRevenue: { $sum: "$totalAmount" },
+//           },
+//         },
+//       ]),
+
+//       // 4. Count of PENDING orders
+//       Order.countDocuments({
+//         ...statsFilter,
+//         status: "PENDING",
+//       }),
+//     ]);
+//     console.log("revenueResult", revenueResult[0]);
+
+//     const totalRevenue = revenueResult[0]?.totalRevenue ?? 0;
+
+//     const response = {
+//       success: true,
+//       message: "Vendor orders fetched successfully",
+//       stats: {
+//         totalRevenue, // sum of totalAmount where PAID + DELIVERED
+//         pendingCount, // count of PENDING orders
+//       },
+//       data: {
+//         orders,
+//         pagination: {
+//           total,
+//           page,
+//           limit,
+//           totalPages: Math.ceil(total / limit),
+//         },
+//       },
+//     };
+
+//     await redis.set(cacheKey, JSON.stringify(response), "EX", 300);
+//     res.status(200).json(response);
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+
+// Statuses from which a user is NOT allowed to cancel
+
 export const getOrdersByVendor = async (req, res, next) => {
   try {
-    const vandorId = req.params.vendorId;
+    const vendorId = req.params.vendorId;
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Version-based cache: incr version on any status change — no redis.keys() needed
-    const version = (await redis.get(`vendor:orders:version:${vandorId}`)) || 1;
-    const cacheKey = `orders:vendor:${vandorId}:v${version}:${JSON.stringify(req.query)}`;
+    const version = (await redis.get(`vendor:orders:version:${vendorId}`)) || 1;
+
+    const cacheKey = `orders:vendor:${vendorId}:v${version}:${JSON.stringify(
+      req.query,
+    )}`;
+
     const cached = await redis.get(cacheKey);
-    if (cached) return res.status(200).json(JSON.parse(cached));
-
-    const filter = { vandorId, orderType: "SUB" };
-    if (req.query.status) filter.status = req.query.status;
-    if (req.query.paymentStatus) filter.paymentStatus = req.query.paymentStatus;
-
-    const now = new Date();
-
-    const dateRangeMap = {
-      today: () => {
-        const start = new Date(now);
-        start.setHours(0, 0, 0, 0);
-        return { $gte: start };
-      },
-      last7days: () => {
-        const start = new Date(now);
-        start.setDate(start.getDate() - 7);
-        return { $gte: start };
-      },
-      last30days: () => {
-        const start = new Date(now);
-        start.setDate(start.getDate() - 30);
-        return { $gte: start };
-      },
-      last90days: () => {
-        const start = new Date(now);
-        start.setDate(start.getDate() - 90);
-        return { $gte: start };
-      },
-      custom: () => {
-        const range = {};
-        if (req.query.startDate) range.$gte = new Date(req.query.startDate);
-        if (req.query.endDate) {
-          const end = new Date(req.query.endDate);
-          end.setHours(23, 59, 59, 999);
-          range.$lte = end;
-        }
-        return Object.keys(range).length ? range : null;
-      },
-    };
-
-    const { dateRange } = req.query;
-    if (dateRange && dateRangeMap[dateRange]) {
-      const range = dateRangeMap[dateRange]();
-      if (range) filter.createdAt = range;
+    if (cached) {
+      return res.status(200).json(JSON.parse(cached));
     }
 
-    // ── Base filter for stats (aggregate needs ObjectId, not string) ──
+    const filter = {
+      "items.vendorId": vendorId,
+      orderType: "SUB",
+    };
+
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+
+    if (req.query.paymentStatus) {
+      filter.paymentStatus = req.query.paymentStatus;
+    }
+
     const statsFilter = {
-      vandorId: new mongoose.Types.ObjectId(vandorId),
+      "items.vendorId": new mongoose.Types.ObjectId(vendorId),
       orderType: "SUB",
     };
 
     const [orders, total, revenueResult, pendingCount] = await Promise.all([
-      // 1. Paginated orders list
       Order.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .populate({ path: "items.product", select: "name thumbnail" })
-        .populate({ path: "items.variant", select: "size price stock" })
+        .populate({
+          path: "items.productId",
+          select: `
+    name
+    images
+    categoryId
+    pcategoryId
+    subcategoryId
+    productTypeId
+    brandId
+  `,
+          populate: [
+            {
+              path: "categoryId",
+              select: "name",
+            },
+            {
+              path: "pcategoryId",
+              select: "name",
+            },
+            {
+              path: "subcategoryId",
+              select: "name",
+            },
+            {
+              path: "productTypeId",
+              select: "typeName",
+            },
+            {
+              path: "brandId",
+              select: "name",
+            },
+          ],
+        })
+        .populate({
+          path: "items.variantId",
+          select: "price packageWeight packageDimensions",
+        })
+        .populate({
+          path: "userId",
+          select: "name email phone",
+        })
+        .populate({
+          path: "shippingAddressId",
+          select:
+            "label userName addressLine country city state pincode landMark",
+        })
         .lean(),
 
-      // 2. Total orders matching filter (for pagination)
       Order.countDocuments(filter),
 
-      // 3. Total revenue — only PAID + DELIVERED orders
       Order.aggregate([
         {
           $match: {
@@ -1150,27 +1543,27 @@ export const getOrdersByVendor = async (req, res, next) => {
         {
           $group: {
             _id: null,
-            totalRevenue: { $sum: "$totalAmount" },
+            totalRevenue: {
+              $sum: "$netAmount",
+            },
           },
         },
       ]),
 
-      // 4. Count of PENDING orders
       Order.countDocuments({
         ...statsFilter,
         status: "PENDING",
       }),
     ]);
-    console.log("revenueResult", revenueResult[0]);
 
-    const totalRevenue = revenueResult[0]?.totalRevenue ?? 0;
+    const totalRevenue = revenueResult[0]?.totalRevenue || 0;
 
     const response = {
       success: true,
       message: "Vendor orders fetched successfully",
       stats: {
-        totalRevenue, // sum of totalAmount where PAID + DELIVERED
-        pendingCount, // count of PENDING orders
+        totalRevenue,
+        pendingCount,
       },
       data: {
         orders,
@@ -1182,15 +1575,13 @@ export const getOrdersByVendor = async (req, res, next) => {
         },
       },
     };
-
     await redis.set(cacheKey, JSON.stringify(response), "EX", 300);
-    res.status(200).json(response);
+    return res.status(200).json(response);
   } catch (error) {
     next(error);
   }
 };
 
-// Statuses from which a user is NOT allowed to cancel
 const NON_CANCELLABLE_STATUSES = [
   "DELIVERED",
   "CANCELLED",
@@ -1334,7 +1725,6 @@ export const cancelOrder = async (req, res, next) => {
     next(error);
   }
 };
-
 export const vendorUpdateOrder = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();

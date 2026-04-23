@@ -31,7 +31,7 @@ const productSchema = new mongoose.Schema(
 
     pcategoryId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "PCategory",
+      ref: "Pcategory",
       required: true,
       index: true,
     },
