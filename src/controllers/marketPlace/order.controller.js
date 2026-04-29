@@ -82,78 +82,38 @@ import Address from "../../models/user/address.model.js";
 
 async function generateOrderInvoices(masterOrder, subOrders) {
   try {
-    // USER MASTER ORDER INVOICE
-    const userPdfUrl = await invoice(masterOrder);
+    // =========================
+    // 🧾 MASTER INVOICE (USER)
+    // =========================
+    const populatedMaster = await Order.findById(masterOrder._id)
+      .populate("userId")
+      .populate("shippingAddressId")
+      .populate("items.productId")
+      .populate("items.variantId")
+      .lean();
+
+    const userPdfUrl = await invoice(populatedMaster);
 
     await Order.updateOne(
       { _id: masterOrder._id },
-      {
-        $set: {
-          invoice: userPdfUrl,
-        },
-      },
+      { $set: { invoice: userPdfUrl } },
     );
 
-    // UNIQUE VENDOR IDS
-    // const vendorIds = [
-    //   ...new Set(subOrders.map((o) => o.vendorId?.toString()).filter(Boolean)),
-    // ];
-
+    // =========================
+    // 🏪 VENDOR IDS SAFETY
+    // =========================
     const vendorIds = [
       ...new Set(
         subOrders
-          .map((o) => o.items?.[0]?.vendorId?.toString())
-          .filter(Boolean),
+          .map((o) => o.items?.[0]?.vendorId)
+          .filter(Boolean)
+          .map((id) => id.toString()),
       ),
     ];
 
-    // FETCH ALL VENDOR COMPANY DOCS
-    // const vendorCompanyDocs = await VendorCompany.find({
-    //   vendorId: { $in: vendorIds },
-    // }).lean();
-
-    // const vcMap = new Map(
-    //   vendorCompanyDocs.map((vc) => [vc.vendorId.toString(), vc]),
-    // );
-
-    // // SUB ORDER VENDOR INVOICES
-    // await Promise.allSettled(
-    //   subOrders.map(async (subOrder) => {
-
-    //     //asgr
-    //     const vendorId = subOrder.items?.[0]?.vendorId?.toString();
-    //     const vc = vcMap.get(vendorId) || {};
-
-    //     //old
-    //     // const vc = vcMap.get(subOrder.vendorId?.toString()) || {};
-
-    //     const vendorData = {
-    //       businessName: vc.companyName || "Vendor",
-    //       gstNumber: vc.gstNumber || "N/A",
-
-    //       address: [
-    //         vc.businessAddress?.address,
-    //         vc.businessAddress?.city,
-    //         vc.businessAddress?.state,
-    //         vc.businessAddress?.pincode,
-    //       ]
-    //         .filter(Boolean)
-    //         .join(", "),
-    //     };
-
-    //     const vendorPdfUrl = await vendorTaxInvoice(subOrder, vendorData);
-
-    //     await Order.updateOne(
-    //       { _id: subOrder._id },
-    //       {
-    //         $set: {
-    //           invoice: vendorPdfUrl,
-    //         },
-    //       },
-    //     );
-    //   }),
-    // );
-
+    // =========================
+    // 📦 VENDOR DATA FETCH
+    // =========================
     const vendorCompanyDocs = await VendorCompany.find({
       vendorId: { $in: vendorIds },
     }).lean();
@@ -162,16 +122,32 @@ async function generateOrderInvoices(masterOrder, subOrders) {
       vendorCompanyDocs.map((vc) => [vc.vendorId.toString(), vc]),
     );
 
-    await Promise.allSettled(
+    // =========================
+    // 🧾 VENDOR INVOICES
+    // =========================
+    await Promise.all(
       subOrders.map(async (subOrder) => {
-        const vendorId = subOrder.items?.[0]?.vendorId?.toString();
+        const populatedSubOrder = await Order.findById(subOrder._id)
+          .populate("userId")
+          .populate("shippingAddressId")
+          .populate("items.productId")
+          .populate("items.variantId")
+          .lean();
 
-        const vc = vcMap.get(vendorId) || {};
+        const vendorId = populatedSubOrder.items?.[0]?.vendorId?.toString();
+
+        if (!vendorId) return;
+
+        const vc = vcMap.get(vendorId);
+
+        if (!vc) {
+          console.warn(`Vendor company missing for ${vendorId}`);
+          return;
+        }
 
         const vendorData = {
           businessName: vc.companyName || "Vendor",
           gstNumber: vc.gstNumber || "N/A",
-
           address: [
             vc.businessAddress?.address,
             vc.businessAddress?.city,
@@ -182,20 +158,21 @@ async function generateOrderInvoices(masterOrder, subOrders) {
             .join(", "),
         };
 
-        const vendorPdfUrl = await vendorTaxInvoice(subOrder, vendorData);
+        const vendorPdfUrl = await vendorTaxInvoice(
+          populatedSubOrder,
+          vendorData,
+        );
 
         await Order.updateOne(
           { _id: subOrder._id },
-          {
-            $set: {
-              invoice: vendorPdfUrl,
-            },
-          },
+          { $set: { invoice: vendorPdfUrl } },
         );
       }),
     );
+
+    console.log("✅ All invoices generated successfully");
   } catch (err) {
-    console.error("[Invoice] generateOrderInvoices error:", err.message);
+    console.error("[Invoice] generateOrderInvoices error:", err);
   }
 }
 
@@ -559,33 +536,407 @@ const calculateVendorSplit = async (cartItems) => {
 // };
 
 //asgar
+// export const createOrder = async (req, res, next) => {
+//   const session = await mongoose.startSession();
+//   let transactionRef = null;
+//   let transactionId = null;
+
+//   session.startTransaction();
+
+//   try {
+//     const userId = req.user.id;
+//     const { addressId, paymentMethod, items } = req.body;
+
+//     if (!addressId || !paymentMethod || !items?.length) {
+//       throw new APIError(
+//         400,
+//         "addressId, paymentMethod and items are required",
+//       );
+//     }
+//     const address = await Address.findOne({
+//       _id: addressId,
+//       userId,
+//     }).session(session);
+
+//     if (!address) {
+//       throw new APIError(404, "Address not found");
+//     }
+//     const cart = await Cart.findOne({ userId })
+//       .populate({
+//         path: "items.variant",
+//         populate: {
+//           path: "productId",
+//           model: "Product",
+//           select: `
+//             name
+//             images
+//             vendorId
+//             deliveryCharges
+//             shippingCharges
+//             measurementUnit
+//           `,
+//         },
+//       })
+//       .session(session);
+
+//     if (!cart || !cart.items.length) {
+//       throw new APIError(400, "Cart is empty");
+//     }
+
+//     // ----------------------------------
+//     // STOCK VALIDATION
+//     // ----------------------------------
+
+//     for (const cartItem of cart.items) {
+//       if (cartItem.quantity > cartItem.variant.stock) {
+//         throw new APIError(
+//           400,
+//           `Out of stock: ${cartItem.variant.productId.name}`,
+//         );
+//       }
+//     }
+//     let subtotal = 0;
+//     let totalDeliveryFee = 0;
+
+//     const vendorMap = new Map();
+//     for (const cartItem of cart.items) {
+//       const variant = cartItem.variant;
+//       const product = variant.productId;
+
+//       const selected = items.find(
+//         (i) => i.variantId === variant._id.toString(),
+//       );
+
+//       if (!selected) continue;
+
+//       const itemTotal = cartItem.quantity * cartItem.unitPrice;
+//       subtotal += itemTotal;
+
+//       let deliveryFee = 0;
+
+//       if (selected.deliveryType === "self") {
+//         deliveryFee = 0;
+//       }
+
+//       if (selected.deliveryType === "vendor") {
+//         deliveryFee = Number(selected.deliveryFee || 0);
+//       }
+
+//       if (selected.deliveryType === "logistic") {
+//         deliveryFee = Number(selected.deliveryFee || 0);
+//       }
+
+//       totalDeliveryFee += deliveryFee;
+
+//       const vendorId = product.vendorId.toString();
+
+//       const preparedItem = {
+//         productId: product._id,
+//         variantId: variant._id,
+//         vendorId: product.vendorId,
+//         quantity: cartItem.quantity,
+//         price: cartItem.unitPrice,
+//         finalPrice: itemTotal,
+//         packageWeight: variant.packageWeight || 0,
+//         deliveryType: selected.deliveryType,
+//         deliveryFee,
+//       };
+
+//       if (!vendorMap.has(vendorId)) {
+//         vendorMap.set(vendorId, []);
+//       }
+
+//       vendorMap.get(vendorId).push(preparedItem);
+//     }
+
+//     const grandTotal = subtotal + totalDeliveryFee;
+//     let paymentStatus = "UNPAID";
+
+//     // const masterOrder = await Order.create(
+//     //   [
+//     //     {
+//     //       userId,
+//     //       orderType: "MASTER",
+//     //       shippingAddressId: addressId,
+//     //       items: Array.from(vendorMap.values()).flat(),
+//     //       subTotal: subtotal,
+//     //       totalDeliveryFee,
+//     //       netAmount: grandTotal,
+//     //       paymentMethod,
+//     //       paymentStatus,
+//     //       status: "PENDING",
+//     //       transactionRef,
+//     //     },
+//     //   ],
+//     //   { session },
+//     // );
+//     // const masterOrderId = masterOrder[0]._id;
+
+//     if (paymentMethod === "WALLET") {
+//       const wallet = await Wallet.findOne({ userId }).session(session);
+
+//       if (!wallet) {
+//         throw new APIError(404, "Wallet not found");
+//       }
+
+//       if (wallet.balance < grandTotal) {
+//         throw new APIError(400, "Insufficient wallet balance");
+//       }
+
+//       // deduct wallet amount
+//       wallet.balance -= grandTotal;
+//       await wallet.save({ session });
+
+//       paymentStatus = "PAID";
+//       // status = "CONFIRMED";
+//       // transaction entry
+//       const transaction = await Transaction.create(
+//         [
+//           {
+//             userId,
+//             orderId: masterOrderId,
+//             amount: grandTotal,
+//             paymentMethod: "WALLET",
+//             status: "SUCCESS",
+//           },
+//         ],
+//         { session },
+//       );
+//       transactionId = transaction[0]._id;
+//       // master order update
+//       await Order.findByIdAndUpdate(
+//         masterOrderId,
+//         {
+//           paymentStatus: "PAID",
+//           status: "CONFIRMED",
+//           transactionId,
+//           "items.$[].status": "CONFIRMED",
+//         },
+//         { session },
+//       );
+//       // sub orders update
+//       await Order.updateMany(
+//         {
+//           parentId: masterOrderId,
+//           orderType: "SUB",
+//         },
+//         {
+//           $set: {
+//             paymentStatus: "PAID",
+//             status: "CONFIRMED",
+//             transactionId,
+//             "items.$[].status": "CONFIRMED",
+//           },
+//         },
+//         { session },
+//       );
+
+//       // stock update
+//       const variantOps = [];
+//       const productOps = [];
+
+//       for (const items of vendorMap.values()) {
+//         for (const item of items) {
+//           variantOps.push({
+//             updateOne: {
+//               filter: { _id: item.variantId },
+//               update: {
+//                 $inc: {
+//                   stock: -item.quantity,
+//                   sold: item.quantity,
+//                 },
+//               },
+//             },
+//           });
+
+//           productOps.push({
+//             updateOne: {
+//               filter: { _id: item.productId },
+//               update: {
+//                 $inc: {
+//                   sold: item.quantity,
+//                 },
+//               },
+//             },
+//           });
+//         }
+//       }
+
+//       if (variantOps.length) {
+//         await Variant.bulkWrite(variantOps, { session });
+//       }
+
+//       if (productOps.length) {
+//         await Product.bulkWrite(productOps, { session });
+//       }
+//       // clear cart
+//       await Cart.findOneAndUpdate(
+//         { userId },
+//         {
+//           items: [],
+//           totalAmount: 0,
+//         },
+//         { session },
+//       );
+
+//     } else if (paymentMethod === "ONLINE") {
+//       paymentStatus = "UNPAID";
+//       // Razorpay order create
+//       const options = {
+//         amount: Math.round(grandTotal * 100), // paise me
+//         currency: "INR",
+//         receipt: `order_${Date.now()}`,
+//         notes: {
+//           userId: userId.toString(),
+//         },
+//       };
+//       const razorpayOrder = await razorpayInstance.orders.create(options);
+
+//       if (!razorpayOrder) {
+//         throw new APIError(400, "Failed to create Razorpay order");
+//       }
+
+//       transactionRef = razorpayOrder.id; // save in master order
+//     }
+//     const masterOrder = await Order.create(
+//       [
+//         {
+//           userId,
+//           orderType: "MASTER",
+//           shippingAddressId: addressId,
+//           items: Array.from(vendorMap.values()).flat(),
+//           subTotal: subtotal,
+//           totalDeliveryFee,
+//           netAmount: grandTotal,
+//           paymentMethod,
+//           paymentStatus,
+//           status: orderStatus,
+//           transactionRef,
+//         },
+//       ],
+//       { session },
+//     );
+//     const masterOrderId = masterOrder[0]._id;
+
+//     const subOrders = [];
+//     for (const [vendorId, vendorItems] of vendorMap.entries()) {
+//       const vendorSubTotal = vendorItems.reduce(
+//         (sum, item) => sum + item.finalPrice,
+//         0,
+//       );
+
+//       const vendorDeliveryFee = vendorItems.reduce(
+//         (sum, item) => sum + item.deliveryFee,
+//         0,
+//       );
+
+//       subOrders.push({
+//         userId,
+//         orderType: "SUB",
+//         parentId: masterOrderId,
+//         shippingAddressId: addressId,
+//         items: vendorItems,
+//         subTotal: vendorSubTotal,
+//         totalDeliveryFee: vendorDeliveryFee,
+//         netAmount: vendorSubTotal + vendorDeliveryFee,
+//         paymentMethod,
+//         paymentStatus,
+//         status: "PENDING",
+//       });
+//     }
+//     await Order.insertMany(subOrders, { session });
+
+//     // ----------------------------------
+//     // STOCK UPDATE
+//     // ----------------------------------
+
+//     const variantOps = [];
+//     const productOps = [];
+
+//     for (const cartItem of cart.items) {
+//       variantOps.push({
+//         updateOne: {
+//           filter: { _id: cartItem.variant._id },
+//           update: {
+//             $inc: {
+//               stock: -cartItem.quantity,
+//             },
+//           },
+//         },
+//       });
+
+//       productOps.push({
+//         updateOne: {
+//           filter: { _id: cartItem.variant.productId._id },
+//           update: {
+//             $inc: {
+//               sold: cartItem.quantity,
+//             },
+//           },
+//         },
+//       });
+//     }
+
+//     await Promise.all([
+//       Variant.bulkWrite(variantOps, { session }),
+//       Product.bulkWrite(productOps, { session }),
+//     ]);
+
+//     // ----------------------------------
+//     // CLEAR CART
+//     // ----------------------------------
+
+//     await Cart.findOneAndUpdate(
+//       { userId },
+//       {
+//         items: [],
+//         totalAmount: 0,
+//       },
+//       { session },
+//     );
+
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     if (paymentStatus === "PAID") {
+//       generateOrderInvoices(masterOrder, subOrders).catch((err) =>
+//         console.error("[Invoice Generation Failed]", err.message),
+//       );
+//     }
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "Order created successfully",
+//       masterOrder: masterOrder[0],
+//     });
+//   } catch (error) {
+//     await session.abortTransaction();
+//     session.endSession();
+//     next(error);
+//   }
+// };
+
+// 10/10 Production Ready Flow
+
+// createOrder:
+// WALLET  -> direct confirm
+// ONLINE  -> create razorpay order only
+// verifyPayment -> final confirmation for ONLINE
+
+// ======================================================
+// CREATE ORDER
+// ======================================================
 
 export const createOrder = async (req, res, next) => {
   const session = await mongoose.startSession();
+  session.startTransaction();
+
   let transactionRef = null;
   let transactionId = null;
-
-  session.startTransaction();
 
   try {
     const userId = req.user.id;
     const { addressId, paymentMethod, items } = req.body;
-
-    /**
-     * req.body
-     *
-     * {
-     *   "addressId": "...",
-     *   "paymentMethod": "COD" / "ONLINE",
-     *   "items": [
-     *     {
-     *       "variantId": "...",
-     *       "deliveryType": "vendor"
-     * "delevryFee": "50"
-     *     }
-     *   ]
-     * }
-     */
 
     if (!addressId || !paymentMethod || !items?.length) {
       throw new APIError(
@@ -594,9 +945,9 @@ export const createOrder = async (req, res, next) => {
       );
     }
 
-    // ----------------------------------
-    // ADDRESS VALIDATION
-    // ----------------------------------
+    // ------------------------------------------------
+    // ADDRESS
+    // ------------------------------------------------
 
     const address = await Address.findOne({
       _id: addressId,
@@ -607,9 +958,9 @@ export const createOrder = async (req, res, next) => {
       throw new APIError(404, "Address not found");
     }
 
-    // ----------------------------------
-    // CART FETCH
-    // ----------------------------------
+    // ------------------------------------------------
+    // CART
+    // ------------------------------------------------
 
     const cart = await Cart.findOne({ userId })
       .populate({
@@ -621,8 +972,6 @@ export const createOrder = async (req, res, next) => {
             name
             images
             vendorId
-            deliveryCharges
-            shippingCharges
             measurementUnit
           `,
         },
@@ -633,9 +982,9 @@ export const createOrder = async (req, res, next) => {
       throw new APIError(400, "Cart is empty");
     }
 
-    // ----------------------------------
+    // ------------------------------------------------
     // STOCK VALIDATION
-    // ----------------------------------
+    // ------------------------------------------------
 
     for (const cartItem of cart.items) {
       if (cartItem.quantity > cartItem.variant.stock) {
@@ -646,12 +995,15 @@ export const createOrder = async (req, res, next) => {
       }
     }
 
-    // ----------------------------------
-    // CALCULATE DELIVERY + TOTAL
-    // ----------------------------------
+    // ------------------------------------------------
+    // PREPARE ITEMS
+    // ------------------------------------------------
 
     let subtotal = 0;
     let totalDeliveryFee = 0;
+
+    let paymentStatus = "UNPAID";
+    let orderStatus = "PENDING";
 
     const vendorMap = new Map();
 
@@ -674,16 +1026,14 @@ export const createOrder = async (req, res, next) => {
         deliveryFee = 0;
       }
 
-      if (selected.deliveryType === "vendor") {
-        deliveryFee = Number(selected.deliveryFee || 0);
-      }
-
-      if (selected.deliveryType === "logistic") {
+      if (
+        selected.deliveryType === "vendor" ||
+        selected.deliveryType === "logistic"
+      ) {
         deliveryFee = Number(selected.deliveryFee || 0);
       }
 
       totalDeliveryFee += deliveryFee;
-
       const vendorId = product.vendorId.toString();
 
       const preparedItem = {
@@ -693,9 +1043,9 @@ export const createOrder = async (req, res, next) => {
         quantity: cartItem.quantity,
         price: cartItem.unitPrice,
         finalPrice: itemTotal,
-        packageWeight: variant.packageWeight || 0,
         deliveryType: selected.deliveryType,
         deliveryFee,
+        status: "PENDING",
       };
 
       if (!vendorMap.has(vendorId)) {
@@ -707,27 +1057,9 @@ export const createOrder = async (req, res, next) => {
 
     const grandTotal = subtotal + totalDeliveryFee;
 
-    let paymentStatus = "UNPAID";
-    const masterOrder = await Order.create(
-      [
-        {
-          userId,
-          orderType: "MASTER",
-          shippingAddressId: addressId,
-          items: Array.from(vendorMap.values()).flat(),
-          subTotal: subtotal,
-          totalDeliveryFee,
-          netAmount: grandTotal,
-          paymentMethod,
-          paymentStatus,
-          status: "PENDING",
-          transactionRef,
-        },
-      ],
-      { session },
-    );
-
-    const masterOrderId = masterOrder[0]._id;
+    // ------------------------------------------------
+    // WALLET CHECK
+    // ------------------------------------------------
 
     if (paymentMethod === "WALLET") {
       const wallet = await Wallet.findOne({ userId }).session(session);
@@ -740,149 +1072,59 @@ export const createOrder = async (req, res, next) => {
         throw new APIError(400, "Insufficient wallet balance");
       }
 
-      // deduct wallet amount
-      wallet.balance -= grandTotal;
-      await wallet.save({ session });
-
       paymentStatus = "PAID";
       orderStatus = "CONFIRMED";
+    }
 
-      // transaction entry
-      const transaction = await Transaction.create(
-        [
-          {
-            userId,
-            orderId: masterOrderId,
-            amount: grandTotal,
-            paymentMethod: "WALLET",
-            status: "SUCCESS",
-          },
-        ],
-        { session },
-      );
+    // ------------------------------------------------
+    // ONLINE PAYMENT -> RAZORPAY ORDER
+    // ------------------------------------------------
 
-      transactionId = transaction[0]._id;
-      // master order update
-      await Order.findByIdAndUpdate(
-        masterOrderId,
-        {
-          paymentStatus: "PAID",
-          status: "CONFIRMED",
-          transactionId,
-          "items.$[].status": "CONFIRMED",
-        },
-        { session },
-      );
-      // sub orders update
-      await Order.updateMany(
-        {
-          parentId: masterOrderId,
-          orderType: "SUB",
-        },
-        {
-          $set: {
-            paymentStatus: "PAID",
-            status: "CONFIRMED",
-            transactionId,
-            "items.$[].status": "CONFIRMED",
-          },
-        },
-        { session },
-      );
-
-      // stock update
-      const variantOps = [];
-      const productOps = [];
-
-      for (const items of vendorMap.values()) {
-        for (const item of items) {
-          variantOps.push({
-            updateOne: {
-              filter: { _id: item.variantId },
-              update: {
-                $inc: {
-                  stock: -item.quantity,
-                  sold: item.quantity,
-                },
-              },
-            },
-          });
-
-          productOps.push({
-            updateOne: {
-              filter: { _id: item.productId },
-              update: {
-                $inc: {
-                  sold: item.quantity,
-                },
-              },
-            },
-          });
-        }
-      }
-
-      if (variantOps.length) {
-        await Variant.bulkWrite(variantOps, { session });
-      }
-
-      if (productOps.length) {
-        await Product.bulkWrite(productOps, { session });
-      }
-
-      // clear cart
-      await Cart.findOneAndUpdate(
-        { userId },
-        {
-          items: [],
-          totalAmount: 0,
-        },
-        { session },
-      );
-    } else if (paymentMethod === "ONLINE") {
-      paymentStatus = "UNPAID";
-      // Razorpay order create
-      const options = {
-        amount: Math.round(grandTotal * 100), // paise me
+    if (paymentMethod === "ONLINE") {
+      const razorpayOrder = await razorpayInstance.orders.create({
+        amount: Math.round(grandTotal * 100),
         currency: "INR",
         receipt: `order_${Date.now()}`,
         notes: {
           userId: userId.toString(),
         },
-      };
-      const razorpayOrder = await razorpayInstance.orders.create(options);
+      });
 
       if (!razorpayOrder) {
         throw new APIError(400, "Failed to create Razorpay order");
       }
 
-      transactionRef = razorpayOrder.id; // save in master order
+      transactionRef = razorpayOrder.id;
     }
 
-    // ----------------------------------
+    // ------------------------------------------------
     // MASTER ORDER
-    // ----------------------------------
-    // const masterOrder = await Order.create(
-    //   [
-    //     {
-    //       userId,
-    //       orderType: "MASTER",
-    //       shippingAddressId: addressId,
-    //       items: Array.from(vendorMap.values()).flat(),
-    //       subTotal: subtotal,
-    //       totalDeliveryFee,
-    //       netAmount: grandTotal,
-    //       paymentMethod,
-    //       paymentStatus,
-    //       status: "PENDING",
-    //       transactionRef,
-    //     },
-    //   ],
-    //   { session },
-    // );
-    // const masterOrderId = masterOrder[0]._id;
-    // ----------------------------------
-    // SUB ORDERS (Vendor Wise)
-    // ----------------------------------
+    // ------------------------------------------------
+
+    const masterOrder = await Order.create(
+      [
+        {
+          userId,
+          orderType: "MASTER",
+          shippingAddressId: addressId,
+          items: Array.from(vendorMap.values()).flat(),
+          subTotal: subtotal,
+          totalDeliveryFee,
+          netAmount: grandTotal,
+          paymentMethod,
+          paymentStatus,
+          status: orderStatus,
+          transactionRef,
+        },
+      ],
+      { session },
+    );
+
+    const masterOrderId = masterOrder[0]._id;
+
+    // ------------------------------------------------
+    // SUB ORDERS
+    // ------------------------------------------------
 
     const subOrders = [];
 
@@ -908,73 +1150,136 @@ export const createOrder = async (req, res, next) => {
         netAmount: vendorSubTotal + vendorDeliveryFee,
         paymentMethod,
         paymentStatus,
-        status: "PENDING",
+        status: orderStatus,
       });
     }
+
     await Order.insertMany(subOrders, { session });
 
-    // ----------------------------------
-    // STOCK UPDATE
-    // ----------------------------------
+    // ------------------------------------------------
+    // WALLET FINAL PROCESS
+    // ------------------------------------------------
 
-    const variantOps = [];
-    const productOps = [];
+    if (paymentMethod === "WALLET") {
+      const wallet = await Wallet.findOne({ userId }).session(session);
 
-    for (const cartItem of cart.items) {
-      variantOps.push({
-        updateOne: {
-          filter: { _id: cartItem.variant._id },
-          update: {
-            $inc: {
-              stock: -cartItem.quantity,
-            },
+      wallet.balance -= grandTotal;
+      await wallet.save({ session });
+
+      const transaction = await Transaction.create(
+        [
+          {
+            userId,
+            orderId: masterOrderId,
+            amount: grandTotal,
+            paymentMethod: "WALLET",
+            status: "SUCCESS",
+          },
+        ],
+        { session },
+      );
+
+      transactionId = transaction[0]._id;
+
+      // master update
+      await Order.findByIdAndUpdate(
+        masterOrderId,
+        {
+          paymentStatus: "PAID",
+          status: "CONFIRMED",
+          transactionId,
+          "items.$[].status": "CONFIRMED",
+        },
+        { session },
+      );
+
+      // sub orders update
+      await Order.updateMany(
+        {
+          parentId: masterOrderId,
+          orderType: "SUB",
+        },
+        {
+          $set: {
+            paymentStatus: "PAID",
+            status: "CONFIRMED",
+            transactionId,
+            "items.$[].status": "CONFIRMED",
           },
         },
-      });
+        { session },
+      );
 
-      productOps.push({
-        updateOne: {
-          filter: { _id: cartItem.variant.productId._id },
-          update: {
-            $inc: {
-              sold: cartItem.quantity,
+      // stock update
+      const variantOps = [];
+      const productOps = [];
+
+      for (const cartItem of cart.items) {
+        variantOps.push({
+          updateOne: {
+            filter: { _id: cartItem.variant._id },
+            update: {
+              $inc: {
+                stock: -cartItem.quantity,
+                sold: cartItem.quantity,
+              },
             },
           },
+        });
+
+        productOps.push({
+          updateOne: {
+            filter: { _id: cartItem.variant.productId._id },
+            update: {
+              $inc: {
+                sold: cartItem.quantity,
+              },
+            },
+          },
+        });
+      }
+
+      if (variantOps.length) {
+        await Variant.bulkWrite(variantOps, { session });
+      }
+
+      if (productOps.length) {
+        await Product.bulkWrite(productOps, { session });
+      }
+
+      // clear cart
+      await Cart.findOneAndUpdate(
+        { userId },
+        {
+          items: [],
+          totalAmount: 0,
         },
-      });
+        { session },
+      );
     }
-
-    await Promise.all([
-      Variant.bulkWrite(variantOps, { session }),
-      Product.bulkWrite(productOps, { session }),
-    ]);
-
-    // ----------------------------------
-    // CLEAR CART
-    // ----------------------------------
-
-    await Cart.findOneAndUpdate(
-      { userId },
-      {
-        items: [],
-        totalAmount: 0,
-      },
-      { session },
-    );
 
     await session.commitTransaction();
     session.endSession();
 
-    if (paymentStatus === "PAID") {
-      generateOrderInvoices(masterOrder, subOrders).catch((err) =>
-        console.error("[Invoice Generation Failed]", err.message),
-      );
-    }
+    if (paymentMethod === "WALLET") {
+      const freshMasterOrder = await Order.findById(masterOrderId);
 
+      const freshSubOrders = await Order.find({
+        parentId: masterOrderId,
+        orderType: "SUB",
+      });
+
+      if (freshMasterOrder) {
+        generateOrderInvoices(freshMasterOrder, freshSubOrders).catch((err) =>
+          console.error("[Invoice Generation Failed]", err.message),
+        );
+      }
+    }
     return res.status(201).json({
       success: true,
       message: "Order created successfully",
       masterOrder: masterOrder[0],
+      transactionRef,
     });
   } catch (error) {
     await session.abortTransaction();
@@ -1239,24 +1544,123 @@ export const verifyPayment = async (req, res, next) => {
 //   }
 // };
 
+//asgar
+// export const getAllOrders = async (req, res, next) => {
+//   try {
+//     const userId = req.user.id;
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 10;
+//     const skip = (page - 1) * limit;
+
+//     // const version = (await redis.get(`user:orders:version:${userId}`)) || 1;
+//     // const cacheKey = `orders:user:${userId}:v${version}:${JSON.stringify(
+//     //   req.query,
+//     // )}`;
+
+//     // const cached = await redis.get(cacheKey);
+
+//     // if (cached) {
+//     //   return res.status(200).json(JSON.parse(cached));
+//     // }
+
+//     const filter = {
+//       userId,
+//       orderType: "MASTER",
+//     };
+
+//     if (req.query.status) {
+//       filter.status = req.query.status;
+//     }
+
+//     const [orders, total] = await Promise.all([
+//       Order.find(filter)
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limit)
+//         .populate({
+//           path: "items.productId",
+//           select: "name images",
+//         })
+//         .populate({
+//           path: "items.variantId",
+//           select: "price packageWeight packageDimensions",
+//         })
+
+//         .populate({
+//           path: "items.vendorId",
+//           select: "firstName email phoneNumber",
+//         })
+
+//         .populate({
+//           path: "userId",
+//           select: "name email phone",
+//         })
+
+//         .populate({
+//           path: "shippingAddressId",
+//           select: "label userName addressLine city state pincode",
+//         }),
+
+//       Order.countDocuments(filter),
+//     ]);
+
+//     const vendorIds = [];
+
+//     orders.forEach((order) => {
+//       order.items.forEach((item) => {
+//         if (item.vendorId?._id) {
+//           vendorIds.push(item.vendorId._id.toString());
+//         }
+//       });
+//     });
+
+//     const vendorCompanies = await VendorCompany.find({
+//       vendorId: { $in: vendorIds },
+//     }).select("companyName contactNumber businessAddress vendorId");
+//     // .lean();
+
+//     const companyMap = {};
+//     vendorCompanies.forEach((company) => {
+//       companyMap[company.vendorId.toString()] = company;
+//     });
+
+//     orders.forEach((order) => {
+//       order.items.forEach((item) => {
+//         const vendorProfileId =
+//           item.vendorId?._id?.toString() || item.vendorId?.toString();
+//         item.vendorCompany = companyMap[vendorProfileId] || null;
+//       });
+//     });
+
+//     // console.log(" companyMap", companyMap);
+//     const response = {
+//       success: true,
+//       message: "Orders fetched successfully",
+//       data: {
+//         orders,
+//         pagination: {
+//           total,
+//           page,
+//           limit,
+//           totalPages: Math.ceil(total / limit),
+//         },
+//       },
+//     };
+
+//     // await redis.set(cacheKey, JSON.stringify(response));
+
+//     return res.status(200).json(response);
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+
 export const getAllOrders = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-
-    const version = (await redis.get(`user:orders:version:${userId}`)) || 1;
-
-    const cacheKey = `orders:user:${userId}:v${version}:${JSON.stringify(
-      req.query,
-    )}`;
-
-    const cached = await redis.get(cacheKey);
-
-    if (cached) {
-      return res.status(200).json(JSON.parse(cached));
-    }
 
     const filter = {
       userId,
@@ -1272,25 +1676,81 @@ export const getAllOrders = async (req, res, next) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
+
         .populate({
           path: "items.productId",
-          select: "name images subCategoryId productTypeId",
+          select: `
+            name
+            images
+            productTypeId
+            subcategoryId
+          `,
+          populate: [
+            {
+              path: "productTypeId",
+              model: "ProductType",
+              select: "typeName",
+            },
+            {
+              path: "subcategoryId",
+              model: "SubCategory",
+              select: "name",
+            },
+          ],
         })
-        .populate({
-          path: "shippingAddressId",
-          select:
-            "label userName addressLine country city state pincode landMark",
-        })
+
+        .select("items createdAt invoice")
         .lean(),
 
       Order.countDocuments(filter),
     ]);
 
+    const formattedOrders = orders.map((order) => {
+      return {
+        _id: order._id,
+        deliveryDate: order.createdAt
+          ? new Date(order.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000)
+          : null,
+
+        items: order.items.map((item) => {
+          const product = item.productId || {};
+          invoice: order.invoice || null;
+
+          return {
+            productId: {
+              _id: product._id || null,
+              name: product.name || "",
+              images: product.images || [],
+
+              productType:
+                product.productTypeId?.length > 0
+                  ? {
+                      _id: product.productTypeId[0]._id || null,
+                      name: product.productTypeId[0].typeName || "",
+                    }
+                  : null,
+
+              // because your data is ARRAY not object
+              subCategory:
+                product.subcategoryId?.length > 0
+                  ? {
+                      _id: product.subcategoryId[0]._id || null,
+                      name: product.subcategoryId[0].name || "",
+                    }
+                  : null,
+            },
+
+            quantity: item.quantity || 0,
+          };
+        }),
+      };
+    });
+
     const response = {
       success: true,
       message: "Orders fetched successfully",
       data: {
-        orders,
+        orders: formattedOrders,
         pagination: {
           total,
           page,
@@ -1299,8 +1759,6 @@ export const getAllOrders = async (req, res, next) => {
         },
       },
     };
-
-    await redis.set(cacheKey, JSON.stringify(response));
 
     return res.status(200).json(response);
   } catch (error) {
@@ -1439,148 +1897,7 @@ export const getAllOrders = async (req, res, next) => {
 
 // Statuses from which a user is NOT allowed to cancel
 
-export const getOrdersByVendor = async (req, res, next) => {
-  try {
-    const vendorId = req.params.vendorId;
 
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
-    const version = (await redis.get(`vendor:orders:version:${vendorId}`)) || 1;
-
-    const cacheKey = `orders:vendor:${vendorId}:v${version}:${JSON.stringify(
-      req.query,
-    )}`;
-
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      return res.status(200).json(JSON.parse(cached));
-    }
-
-    const filter = {
-      "items.vendorId": vendorId,
-      orderType: "SUB",
-    };
-
-    if (req.query.status) {
-      filter.status = req.query.status;
-    }
-
-    if (req.query.paymentStatus) {
-      filter.paymentStatus = req.query.paymentStatus;
-    }
-
-    const statsFilter = {
-      "items.vendorId": new mongoose.Types.ObjectId(vendorId),
-      orderType: "SUB",
-    };
-
-    const [orders, total, revenueResult, pendingCount] = await Promise.all([
-      Order.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .populate({
-          path: "items.productId",
-          select: `
-    name
-    images
-    categoryId
-    pcategoryId
-    subcategoryId
-    productTypeId
-    brandId
-  `,
-          populate: [
-            {
-              path: "categoryId",
-              select: "name",
-            },
-            {
-              path: "pcategoryId",
-              select: "name",
-            },
-            {
-              path: "subcategoryId",
-              select: "name",
-            },
-            {
-              path: "productTypeId",
-              select: "typeName",
-            },
-            {
-              path: "brandId",
-              select: "name",
-            },
-          ],
-        })
-        .populate({
-          path: "items.variantId",
-          select: "price packageWeight packageDimensions",
-        })
-        .populate({
-          path: "userId",
-          select: "name email phone",
-        })
-        .populate({
-          path: "shippingAddressId",
-          select:
-            "label userName addressLine country city state pincode landMark",
-        })
-        .lean(),
-
-      Order.countDocuments(filter),
-
-      Order.aggregate([
-        {
-          $match: {
-            ...statsFilter,
-            paymentStatus: "PAID",
-            status: "DELIVERED",
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            totalRevenue: {
-              $sum: "$netAmount",
-            },
-          },
-        },
-      ]),
-
-      Order.countDocuments({
-        ...statsFilter,
-        status: "PENDING",
-      }),
-    ]);
-
-    const totalRevenue = revenueResult[0]?.totalRevenue || 0;
-
-    const response = {
-      success: true,
-      message: "Vendor orders fetched successfully",
-      stats: {
-        totalRevenue,
-        pendingCount,
-      },
-      data: {
-        orders,
-        pagination: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
-    };
-    await redis.set(cacheKey, JSON.stringify(response), "EX", 300);
-    return res.status(200).json(response);
-  } catch (error) {
-    next(error);
-  }
-};
 
 const NON_CANCELLABLE_STATUSES = [
   "DELIVERED",
@@ -1846,57 +2163,455 @@ export const vendorUpdateOrder = async (req, res, next) => {
 };
 
 /* ========================== GET ORDER BY ID (USER) ========================== */
+// export const getOrderById = async (req, res, next) => {
+//   try {
+//     const userId = req.user._id;
+//     const { orderId } = req.params;
+
+//     const version = (await redis.get(`order:version:${orderId}`)) || 1;
+
+//     const cacheKey = `order:${orderId}:user:${userId}:v${version}`;
+
+//     const cached = await redis.get(cacheKey);
+//     if (cached) return res.status(200).json(JSON.parse(cached));
+
+//     const masterOrder = await Order.findOne({
+//       _id: orderId,
+//       userId,
+//     })
+//       .populate({
+//         path: "items.product",
+//         select: "name thumbnail",
+//       })
+//       .populate({
+//         path: "items.variant",
+//         select: "size price mrp discount",
+//       })
+//       .lean();
+
+//     if (!masterOrder) throw new APIError(404, "Order not found");
+
+//     const transactionPromise = Transaction.findById(masterOrder.transactionId)
+//       .select("amount status paymentMethod razorpayOrderId createdAt")
+//       .lean();
+
+//     const [transaction] = await Promise.all([transactionPromise]);
+
+//     masterOrder.transactionId = transaction;
+
+//     const response = {
+//       success: true,
+//       message: "Order fetched successfully",
+//       data: {
+//         order: { ...masterOrder },
+//       },
+//     };
+
+//     await redis.set(cacheKey, JSON.stringify(response), "EX", 300);
+//     return res.status(200).json(response);
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+
+//asgr-invoice nhi h
+// export const getOrderById = async (req, res, next) => {
+//   try {
+//     const userId = req.user.id;
+//     const { orderId } = req.params;
+
+//     // =========================
+//     // Redis Cache Version
+//     // =========================
+
+//     // const version = (await redis.get(`order:version:${orderId}`)) || 1;
+
+//     // const cacheKey = `order:${orderId}:user:${userId}:v${version}`;
+
+//     // const cached = await redis.get(cacheKey);
+
+//     // if (cached) {
+//     //   return res.status(200).json(JSON.parse(cached));
+//     // }
+
+//     // =========================
+//     // Fetch Master Order
+//     // =========================
+
+//     const masterOrder = await Order.findOne({
+//       _id: orderId,
+//       userId,
+//       orderType: "MASTER",
+//     })
+//       .select("+invoice")
+//       // product details
+//       .populate({
+//         path: "items.productId",
+//         select: `
+//           name
+//           images
+//           categoryId
+//           pcategoryId
+//           subcategoryId
+//           productTypeId
+//           brandId
+//         `,
+//         populate: [
+//           {
+//             path: "categoryId",
+//             select: "name",
+//           },
+//           {
+//             path: "pcategoryId",
+//             select: "name",
+//           },
+//           {
+//             path: "subcategoryId",
+//             select: "name",
+//           },
+//           {
+//             path: "productTypeId",
+//             select: "typeName",
+//           },
+//           {
+//             path: "brandId",
+//             select: "name",
+//           },
+//         ],
+//       })
+
+//       // variant details
+//       .populate({
+//         path: "items.variantId",
+//         select: `
+//           price
+//           packageWeight
+//           packageDimensions
+//           stock
+//           sold
+//         `,
+//       })
+
+//       // vendor profile details
+//       .populate({
+//         path: "items.vendorId",
+//         select: `
+//           firstName
+//           lastName
+//           email
+//           phoneNumber
+//         `,
+//       })
+
+//       // user details
+//       .populate({
+//         path: "userId",
+//         select: `
+//           name
+//           email
+//           phone
+//         `,
+//       })
+
+//       // shipping address
+//       .populate({
+//         path: "shippingAddressId",
+//         select: `
+//           label
+//           userName
+//           addressLine
+//           country
+//           state
+//           city
+//           pincode
+//           landMark
+//         `,
+//       })
+//       .lean();
+
+//     if (!masterOrder) {
+//       throw new APIError(404, "Order not found");
+//     }
+
+//     // =========================
+//     // Fetch Vendor Company Details
+//     // =========================
+
+//     const vendorIds = [];
+
+//     masterOrder.items.forEach((item) => {
+//       const vendorProfileId =
+//         item.vendorId?._id?.toString() || item.vendorId?.toString();
+
+//       if (vendorProfileId) {
+//         vendorIds.push(vendorProfileId);
+//       }
+//     });
+
+//     const vendorCompanies = await VendorCompany.find({
+//       vendorId: { $in: vendorIds },
+//     })
+//       .select(
+//         `
+//         companyName
+//         contactNumber
+//         businessAddress
+//         vendorId
+//       `,
+//       )
+//       .lean();
+
+//     const companyMap = {};
+
+//     vendorCompanies.forEach((company) => {
+//       companyMap[company.vendorId.toString()] = company;
+//     });
+
+//     // attach company details inside each item
+//     masterOrder.items.forEach((item) => {
+//       const vendorProfileId =
+//         item.vendorId?._id?.toString() || item.vendorId?.toString();
+
+//       item.vendorCompany = companyMap[vendorProfileId] || null;
+//     });
+//     let transaction = null;
+
+//     if (masterOrder.transactionId) {
+//       transaction = await Transaction.findById(masterOrder.transactionId)
+//         .select(
+//           `
+//           amount
+//           status
+//           paymentMethod
+//           razorpayOrderId
+//           createdAt
+//         `,
+//         )
+//         .lean();
+//     }
+
+//     masterOrder.transactionId = transaction;
+
+//     const response = {
+//       success: true,
+//       message: "Order fetched successfully",
+//       data: {
+//         order: masterOrder,
+//       },
+//     };
+
+//     // await redis.set(cacheKey, JSON.stringify(response), "EX", 300);
+
+//     return res.status(200).json(response);
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+
 export const getOrderById = async (req, res, next) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const { orderId } = req.params;
 
-    const version = (await redis.get(`order:version:${orderId}`)) || 1;
-
-    const cacheKey = `order:${orderId}:user:${userId}:v${version}`;
-
-    const cached = await redis.get(cacheKey);
-    if (cached) return res.status(200).json(JSON.parse(cached));
+    // =========================
+    // Fetch Master Order
+    // =========================
 
     const masterOrder = await Order.findOne({
       _id: orderId,
       userId,
+      orderType: "MASTER",
     })
+      .select(
+        `
+        invoice
+        userId
+        orderType
+        parentId
+        items
+        shippingAddressId
+        subTotal
+        totalDeliveryFee
+        netAmount
+        status
+        paymentStatus
+        paymentMethod
+        transactionRef
+        transactionId
+        createdAt
+        updatedAt
+      `,
+      )
+
+      // Product Details
       .populate({
-        path: "items.product",
-        select: "name thumbnail",
+        path: "items.productId",
+        select: `
+          name
+          images
+          categoryId
+          pcategoryId
+          subcategoryId
+          productTypeId
+          brandId
+        `,
+        populate: [
+          {
+            path: "categoryId",
+            select: "name",
+          },
+          {
+            path: "pcategoryId",
+            select: "name",
+          },
+          {
+            path: "subcategoryId",
+            select: "name",
+          },
+          {
+            path: "productTypeId",
+            select: "typeName",
+          },
+          {
+            path: "brandId",
+            select: "name",
+          },
+        ],
       })
+
+      // Variant Details
       .populate({
-        path: "items.variant",
-        select: "size price mrp discount",
+        path: "items.variantId",
+        select: `
+          price
+          packageWeight
+          packageDimensions
+          stock
+          sold
+        `,
       })
+
+      // Vendor Profile Details
+      .populate({
+        path: "items.vendorId",
+        select: `
+          firstName
+          lastName
+          email
+          phoneNumber
+        `,
+      })
+
+      // User Details
+      .populate({
+        path: "userId",
+        select: `
+          name
+          email
+          phone
+        `,
+      })
+
+      // Shipping Address
+      .populate({
+        path: "shippingAddressId",
+        select: `
+          label
+          userName
+          addressLine
+          country
+          state
+          city
+          pincode
+          landMark
+        `,
+      })
+
       .lean();
 
-    if (!masterOrder) throw new APIError(404, "Order not found");
+    if (!masterOrder) {
+      throw new APIError(404, "Order not found");
+    }
 
-    const transactionPromise = Transaction.findById(masterOrder.transactionId)
-      .select("amount status paymentMethod razorpayOrderId createdAt")
+    // =========================
+    // Fetch Vendor Company Details
+    // =========================
+
+    const vendorIds = [];
+
+    masterOrder.items.forEach((item) => {
+      const vendorProfileId =
+        item.vendorId?._id?.toString() || item.vendorId?.toString();
+
+      if (vendorProfileId) {
+        vendorIds.push(vendorProfileId);
+      }
+    });
+
+    const vendorCompanies = await VendorCompany.find({
+      vendorId: { $in: vendorIds },
+    })
+      .select(
+        `
+        companyName
+        contactNumber
+        businessAddress
+        vendorId
+      `,
+      )
       .lean();
 
-    const [transaction] = await Promise.all([transactionPromise]);
+    const companyMap = {};
+
+    vendorCompanies.forEach((company) => {
+      companyMap[company.vendorId.toString()] = company;
+    });
+
+    // Attach company details inside each item
+    masterOrder.items.forEach((item) => {
+      const vendorProfileId =
+        item.vendorId?._id?.toString() || item.vendorId?.toString();
+
+      item.vendorCompany = companyMap[vendorProfileId] || null;
+    });
+
+    // =========================
+    // Fetch Transaction Details
+    // =========================
+
+    let transaction = null;
+
+    if (masterOrder.transactionId) {
+      transaction = await Transaction.findById(masterOrder.transactionId)
+        .select(
+          `
+          amount
+          status
+          paymentMethod
+          razorpayOrderId
+          createdAt
+        `,
+        )
+        .lean();
+    }
 
     masterOrder.transactionId = transaction;
+    // Debug check
+    console.log("invoice =>", masterOrder.invoice);
 
     const response = {
       success: true,
       message: "Order fetched successfully",
       data: {
-        order: { ...masterOrder },
+        order: masterOrder,
       },
     };
 
-    await redis.set(cacheKey, JSON.stringify(response), "EX", 300);
     return res.status(200).json(response);
   } catch (error) {
     next(error);
   }
 };
-
 export const adminGetAllOrders = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -2284,7 +2999,6 @@ export const createShippingLabel = async (req, res, next) => {
     next(error);
   }
 };
-
 import { addSettlement } from "../vendorShop/vendorWallet.controller.js";
 export const updateOrderToDelivered = async (req, res, next) => {
   const { orderId } = req.params;

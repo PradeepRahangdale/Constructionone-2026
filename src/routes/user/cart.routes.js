@@ -6,7 +6,7 @@ import {
   updateCartItem,
   removeCartItem,
   similarProducts,
-  getCartWithDistances,
+  // getCartWithDistances,
   checkoutPreview,
   calculateDeliveryFee,
 } from "../../controllers/user/cart.controller.js";
@@ -19,7 +19,7 @@ router.get("/getCart", requireAuth, getCart);
 router.put("/update-quantity", requireAuth, updateCartItem);
 router.delete("/remove/:variantId", requireAuth, removeCartItem);
 router.get("/similar/:productId", requireAuth, similarProducts);
-router.get("/cart-with-distances", requireAuth, getCartWithDistances);
+// router.get("/cart-with-distances", requireAuth, getCartWithDistances);
 router.post("/checkout-preview", requireAuth, checkoutPreview);
 router.post("/calculate-delivery-fee", requireAuth, calculateDeliveryFee);
 

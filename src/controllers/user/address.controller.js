@@ -2,6 +2,8 @@ import Address from "../../models/user/address.model.js"; // priyanshu
 
 export const createAddress = async (req, res, next) => {
   try {
+    const userId = req.user.id;
+    req.body.userId = userId;
     const address = await Address.create(req.body);
     res.status(201).json(address);
   } catch (error) {

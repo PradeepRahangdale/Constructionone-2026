@@ -14,17 +14,20 @@ const router = Router();
 
 router.post(
   "/",
+  authMiddleware,
   validateRequest(addressValidation.createAddress),
   createAddress,
 );
 router.get("/", authMiddleware, getAddressesByUser);
 router.put(
   "/:id",
+  authMiddleware,
   validateRequest(addressValidation.updateAddress),
   updateAddress,
 );
 router.delete(
   "/:id",
+  authMiddleware,
   validateRequest(addressValidation.addressId),
   deleteAddress,
 );

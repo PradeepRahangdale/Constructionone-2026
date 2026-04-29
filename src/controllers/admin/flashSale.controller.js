@@ -38,6 +38,7 @@ export const createFlashSale = catchAsync(async (req, res, next) => {
 });
 
 export const updateFlashSaleController = catchAsync(async (req, res) => {
+  
   const { id } = req.params;
   const result = await FlashSaleService.updateFlashSale(id, req.body);
   res
@@ -111,7 +112,6 @@ export const getAllFlashSales = catchAsync(async (req, res) => {
   };
 
   const skip = (Number(page) - 1) * Number(limit);
-
   const [total, sales] = await Promise.all([
     FlashSale.countDocuments(filter),
 
@@ -131,7 +131,10 @@ export const getAllFlashSales = catchAsync(async (req, res) => {
     flashSaleId: { $in: flashSaleIds },
   })
     .populate("productId", "name")
-    .populate("variantId", "price stock packageWeight packageDimensions")
+    .populate(
+      "variantId",
+      " moq Type price stock packageWeight packageDimensions",
+    )
     .lean();
 
   const itemMap = {};

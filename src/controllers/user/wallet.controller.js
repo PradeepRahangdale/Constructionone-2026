@@ -18,7 +18,6 @@ const getOrCreateWallet = async (userId, session = null) => {
     });
     wallet = created[0];
   }
-
   return wallet;
 };
 
@@ -63,17 +62,15 @@ export const createWalletTopup = async (req, res, next) => {
       throw new APIError(400, "Amount required");
     }
 
-    if (walletType === "addOnce") {
-      const company = await companyModel.findOne();
-
-      if (!company) {
-        throw new APIError(404, "Company config not found");
-      }
-
-      if (!company.walletTopupAmounts.includes(Number(amount))) {
-        throw new APIError(400, "Invalid top-up amount");
-      }
-    }
+    // if (walletType === "addOnce") {
+    //   const company = await companyModel.findOne();
+    //   if (!company) {
+    //     throw new APIError(404, "Company config not found");
+    //   }
+    //   if (!company.walletTopupAmounts.includes(Number(amount))) {
+    //     throw new APIError(400, "Invalid top-up amount");
+    //   }
+    // }
 
     const order = await razorpay.orders.create({
       amount: amount * 100,
@@ -241,6 +238,16 @@ export const getWalletHistory = async (req, res, next) => {
     await redis.set(cacheKey, JSON.stringify(result), "EX", 120);
 
     return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCompanySuggestAmount = async (req, res, next) => {
+  try {
+    const company = await companyModel.findOne();
+    let amounts = company.walletTopupAmounts;
+    return res.status(200).json({ success: true, data: amounts });
   } catch (error) {
     next(error);
   }

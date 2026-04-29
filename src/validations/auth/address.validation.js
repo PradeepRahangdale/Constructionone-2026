@@ -5,13 +5,6 @@ export const addressValidation = {
 
 
   createAddress: [
-
-    body("userId")
-      .notEmpty()
-      .withMessage("User ID is required")
-      .custom(validateObjectId)
-      .withMessage("Invalid user ID"),
-
     body("userName")
       .trim()
       .notEmpty()

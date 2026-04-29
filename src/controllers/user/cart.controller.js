@@ -392,89 +392,89 @@ export const similarProducts = async (req, res, next) => {
 };
 
 // GET /cart/distances?addressId=123
-export const getCartWithDistances = async (req, res) => {
-  try {
-    // const userId = req.user.id;
-    const userId = "6992ebf155e45f668bce5b09";
-    const { addressId } = req.query;
+// export const getCartWithDistances = async (req, res) => {
+//   try {
+//     // const userId = req.user.id;
+//     const userId = "6992ebf155e45f668bce5b09";
+//     const { addressId } = req.query;
 
-    // 1. Get User Address
-    const address = await Address.findOne({
-      _id: addressId,
-      userId,
-    });
+//     // 1. Get User Address
+//     const address = await Address.findOne({
+//       _id: addressId,
+//       userId,
+//     });
 
-    if (!address) {
-      return res.status(404).json({ message: "Address not found" });
-    }
+//     if (!address) {
+//       return res.status(404).json({ message: "Address not found" });
+//     }
 
-    const userLat = address.location.coordinates[1];
-    const userLng = address.location.coordinates[0];
+//     const userLat = address.location.coordinates[1];
+//     const userLng = address.location.coordinates[0];
 
-    // 2. Get Cart
-    const cart = await Cart.findOne({ userId })
-      .populate({
-        path: "items.variant",
-        populate: {
-          path: "productId",
-          select: "name thumbnail slug vendorId vendorLocation",
-        },
-      })
-      .lean();
+//     // 2. Get Cart
+//     const cart = await Cart.findOne({ userId })
+//       .populate({
+//         path: "items.variant",
+//         populate: {
+//           path: "productId",
+//           select: "name thumbnail slug vendorId vendorLocation",
+//         },
+//       })
+//       .lean();
 
-    if (!cart) {
-      return res.status(404).json({ message: "Cart is empty" });
-    }
+//     if (!cart) {
+//       return res.status(404).json({ message: "Cart is empty" });
+//     }
 
-    // 3. Distance Function
-    const getDistanceInKm = (lat1, lon1, lat2, lon2) => {
-      const toRad = (val) => (val * Math.PI) / 180;
-      const R = 6371;
+//     // 3. Distance Function
+//     const getDistanceInKm = (lat1, lon1, lat2, lon2) => {
+//       const toRad = (val) => (val * Math.PI) / 180;
+//       const R = 6371;
 
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
+//       const dLat = toRad(lat2 - lat1);
+//       const dLon = toRad(lon2 - lon1);
 
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+//       const a =
+//         Math.sin(dLat / 2) ** 2 +
+//         Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
-      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-    };
+//       return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+//     };
 
-    // 4. Build Response
-    const itemsWithDistance = cart.items
-      .filter((item) => item.variant && item.variant.productId)
-      .map((item) => {
-        const product = item.variant.productId;
-        const vendorLocation = product.vendorLocation;
+//     // 4. Build Response
+//     const itemsWithDistance = cart.items
+//       .filter((item) => item.variant && item.variant.productId)
+//       .map((item) => {
+//         const product = item.variant.productId;
+//         const vendorLocation = product.vendorLocation;
 
-        let distance = 0;
+//         let distance = 0;
 
-        if (vendorLocation && vendorLocation.coordinates) {
-          const [vendorLng, vendorLat] = vendorLocation.coordinates;
+//         if (vendorLocation && vendorLocation.coordinates) {
+//           const [vendorLng, vendorLat] = vendorLocation.coordinates;
 
-          distance = getDistanceInKm(vendorLat, vendorLng, userLat, userLng);
-        }
+//           distance = getDistanceInKm(vendorLat, vendorLng, userLat, userLng);
+//         }
 
-        return {
-          itemId: item._id,
-          productId: product._id,
-          name: product.name,
-          thumbnail: product.thumbnail,
-          quantity: item.quantity,
-          distance: Math.round(distance), // KM
-        };
-      });
+//         return {
+//           itemId: item._id,
+//           productId: product._id,
+//           name: product.name,
+//           thumbnail: product.thumbnail,
+//           quantity: item.quantity,
+//           distance: Math.round(distance), // KM
+//         };
+//       });
 
-    return res.status(200).json({
-      success: true,
-      message: "Cart with distances",
-      items: itemsWithDistance,
-    });
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-};
+//     return res.status(200).json({
+//       success: true,
+//       message: "Cart with distances",
+//       items: itemsWithDistance,
+//     });
+//   } catch (error) {
+//     return res.status(500).json({ message: error.message });
+//   }
+// };
 
 export const checkoutPreview = async (req, res, next) => {
   try {
@@ -484,7 +484,6 @@ export const checkoutPreview = async (req, res, next) => {
     if (!addressId) {
       throw new APIError(400, "addressId is required");
     }
-
     // user selected address check
     const address = await Address.findOne({
       _id: addressId,
@@ -517,9 +516,7 @@ export const checkoutPreview = async (req, res, next) => {
     if (!cart || !cart.items.length) {
       throw new APIError(400, "Cart is empty");
     }
-
     const responseItems = [];
-
     for (const item of cart.items) {
       const variant = item.variant;
       const product = variant.productId;
@@ -747,9 +744,6 @@ export const calculateSingleItemDeliveryFee = async ({
       userCoordinates[1], // lat
       userCoordinates[0], // lng
     );
-
-    // distanceMeter = Math.round(distanceKm * 1000);
-    // distanceKm = Number(distanceKm.toFixed(2));
 
     distanceKm = roadDistance.distanceKm;
     distanceMeter = roadDistance.distanceMeter;

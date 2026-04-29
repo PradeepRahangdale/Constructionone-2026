@@ -127,15 +127,13 @@ class VariantController {
         ...variantData,
         price,
         discountAmount,
-
         productId: product._id,
         moduleId: product.moduleId,
         pcategoryId: product.pcategoryId,
         categoryId: product.categoryId,
         subcategoryId: product.subcategoryId,
         brandId: product.brandId,
-
-        // vendorId: product.vendorId,
+        createdBy: product.vendorId,
       });
 
       await RedisCache.deletePattern?.("products:*");

@@ -3,7 +3,7 @@ import {
   createOrder,
   verifyPayment,
   getAllOrders,
-  getOrdersByVendor,
+  // getOrdersByVendor,
   cancelOrder,
   vendorUpdateOrder,
   getOrderById,
@@ -30,7 +30,7 @@ router.get("/my-orders", requireAuth, getAllOrders);
 router.put("/:orderId/cancel", requireAuth, cancelOrder);
 
 // vendor routes
-router.get("/vendor-orders/:vendorId", requireAuth, getOrdersByVendor);
+// router.get("/vendor-orders/:vendorId", requireAuth, getOrdersByVendor);
 router.put(
   "/vendor/sub-order/:subOrderId",
   vendorMiddleware,
@@ -49,7 +49,6 @@ router.put(
 );
 router.post("/vendor/generate-label/:orderId", createShippingLabel);
 router.get("/:orderId", requireAuth, getOrderById);
-
 router.patch("/:orderId/delivered", updateOrderToDelivered);
 
 export default router;

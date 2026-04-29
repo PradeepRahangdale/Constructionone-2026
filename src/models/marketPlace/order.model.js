@@ -211,6 +211,10 @@ const orderItemSchema = new mongoose.Schema(
       ref: "vendorProfile",
       required: true,
     },
+    vendorCompanyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "vendorCompany",
+    },
 
     quantity: {
       type: Number,

@@ -1,6 +1,6 @@
 import express from "express";
 import { s3Uploader } from "../../middlewares/uploads.js";
-import { updateCompany,getCompany } from "../../controllers/admin/company.controller.js";
+import { updateCompany,getCompany ,getLandingPage} from "../../controllers/admin/company.controller.js";
 
 const router = express.Router();
 
@@ -15,5 +15,6 @@ router.post("/update-company", s3Uploader().fields([
 ]), updateCompany);
 
 router.get("/get-company", getCompany);
+router.get("/landing-page", getLandingPage);
 
 export default router;

@@ -629,6 +629,7 @@ export const updateUpsertVendorInfo = async (req, res) => {
 export const loginWithPhone = async (req, res) => {
   try {
     const { phoneNumber } = req.body;
+
     if (!phoneNumber) {
       return res.status(400).json({
         success: false,
@@ -646,7 +647,8 @@ export const loginWithPhone = async (req, res) => {
     const validatedPhone = phoneValidation.normalized;
 
     const user = await VendorProfile.findOne({ phoneNumber: validatedPhone });
-    if (!user) {
+
+    if (!user || !user.isAdminVerified) {
       return res.status(404).json({
         success: false,
         error: "User not found. Please register first.",

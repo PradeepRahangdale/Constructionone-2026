@@ -74,7 +74,7 @@ export async function createFlashSale({
   }
 
   const variants = await Variant.find({ _id: { $in: variantIds } })
-    .select("_id price stock")
+    .select("_id price stock mrp Type moq")
     .lean();
 
   if (variants.length !== variantIds.length) {
