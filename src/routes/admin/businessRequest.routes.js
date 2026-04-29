@@ -10,7 +10,7 @@ import { requireAuth } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.get("/selltype", requireAuth, getAllCatogry);
+router.get("/selltype", getAllCatogry);
 router.post("/", createBusinessRequest);
 router.get("/", requireAuth, getBusinessRequests);
 router.get("/:id", requireAuth, getBusinessRequestById);

@@ -87,6 +87,10 @@ export const deleteBusinessRequestById = async (req, res) => {
 };
 
 export const getAllCatogry = async (req, res) => {
-  const category = await categoryModel.find().select("name").lean();
-  res.status(200).json(category);
+  try {
+    const category = await categoryModel.find().select("name").lean();
+    res.status(200).json(category);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 };

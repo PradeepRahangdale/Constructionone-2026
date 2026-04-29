@@ -33,6 +33,7 @@ export const vendorAuth = async (req, res) => {
     let user = await VendorProfile.findOne({
       phoneNumber: validatedPhone,
       isPhoneVerified: true,
+      isAdminVerified: true,
     });
 
     // const otp = generateOtp();
